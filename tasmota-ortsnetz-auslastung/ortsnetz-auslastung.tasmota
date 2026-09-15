@@ -1,0 +1,54 @@
+>D 64
+; Ortsnetz-Auslastung for Tasmota Smart Meter Interface
+; Version 0.1.0
+;
+; Change only these values and the GPIO/baud rate in the >M section.
+latitude=52.520008
+longitude=13.404954
+
+; Values copied from SML descriptor lines.
+l1=0
+l2=0
+l3=0
+freq=0
+
+>B
+; 512 bytes are needed for the WebQuery command including its JSON payload.
+cbs=512
+; Do not emit an MQTT SML payload; this integration uploads directly via HTTPS.
+smlj=0
+; Initialise the Smart Meter Interface after every boot / script save.
+->sensor53 r
+
+>S
+; Descriptor values are indexed from 1. Keep this order in the >M section.
+l1=sml[1]
+l2=sml[2]
+l3=sml[3]
+freq=sml[4]
+
+; Upload once per five minutes, but only after NTP has set a plausible UTC time
+; and all required values have been decoded.
+if upsecs%300==0
+and year>=2025
+and l1>=150
+and l1<=300
+and l2>=150
+and l2<=300
+and l3>=150
+and l3<=300
+then
+; Timezone must be set to UTC: `Timezone 0`.  Tasmota's tstamp is then UTC.
+=>WebQuery https://www.ortsnetz-auslastung.de/v1/measurements POST [Content-Type:application/json]{"observed_at":"%tstamp%Z","latitude":%6latitude%,"longitude":%6longitude%,"l1_v":%2l1%,"l2_v":%2l2%,"l3_v":%2l3%,"grid_frequency_hz":%2freq%,"integration_version":"tasmota-0.1.0"}
+endif
+
+>M 1
+; Example for a German SML meter: change RX GPIO 3 and baud rate if required.
+; GPIO must be configured as "None" in Tasmota's module configuration.
++1,3,s,16,9600,SML
+; OBIS 1-0:32.7.0, 52.7.0, 72.7.0 and 14.7.0
+1,77070100200700ff@1,Voltage L1,V,l1_v,1
+1,77070100340700ff@1,Voltage L2,V,l2_v,1
+1,77070100480700ff@1,Voltage L3,V,l3_v,1
+1,770701000e0700ff@1,Frequency,Hz,freq_hz,2
+#
