@@ -32,10 +32,10 @@ Die Pinbelegung, Baudrate und OBIS-Werte können je Zählermodell abweichen. Das
 
 ## ioBroker
 
-Ein Script für den ioBroker-JavaScript-Adapter liest drei vorhandene Datenpunkte für die Phasenspannungen. Die Messwerte können beispielsweise von einem Shelly-, Smart-Meter- oder Modbus-Adapter stammen.
+Ein Script für den ioBroker-JavaScript-Adapter liest drei vorhandene Datenpunkte für die Phasenspannungen. Die Messwerte können beispielsweise von einem Shelly-, Smart-Meter- oder Modbus-Adapter, Tasmota Adapter stammen.
 
-- Repository: lokal `iobroker-ortsnetz-auslastung`
-- Messquelle: beliebige ioBroker-Datenpunkte für L1/L2/L3
+- Ordner: lokal `iobroker-ortsnetz-auslastung`
+- Messquelle: Smartmeter ioBroker-Datenpunkte für L1/L2/L3
 - Voraussetzung: `ioBroker.javascript` ab 7.9.0
 
 Es gibt keine zusätzlichen npm-Abhängigkeiten: Das Script nutzt `httpPost` aus dem JavaScript-Adapter.
