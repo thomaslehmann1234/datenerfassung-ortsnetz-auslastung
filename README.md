@@ -6,6 +6,7 @@ Diese Sammlung beschreibt die verfügbaren Wege, Spannungen im lokalen Stromnetz
 
 | Integration | Messquelle | Laufzeit | Upload | Geeignet für |
 | --- | --- | --- | --- | --- |
+| [Home Assistant](#home-assistant) | Bestehende Spannungs-Sensoren | Home Assistant / HACS | HTTPS | Bestehende Home-Assistant-Installation |
 | [Shelly Pro 3EM] | Direkte 3-Phasen-Messung | Shelly Script | HTTPS | Installation auf dem Shelly |
 | [Tasmota] | Optischer IR-Lesekopf am Stromzähler | ESP32/Tasmota-Script | HTTPS/Webquery | Installation auf dem Lesekopf |
 | [ioBroker] | Vorhandene Spannungs-Datenpunkte | ioBroker JavaScript | HTTPS | Bestehende ioBroker-Installation |
@@ -29,6 +30,16 @@ Ein ESP32 mit optischem Lesekopf liest SML-Telegramme des Stromzählers und übe
 - Voraussetzung: ESP32 (HTTPS), selbst kompilierte Tasmota-Firmware mit `USE_SCRIPT` und `USE_SML_M`, freigeschaltete Info-Schnittstelle des Zählers
 
 Die Pinbelegung, Baudrate und OBIS-Werte können je Zählermodell abweichen. Das enthaltene Beispiel zielt auf binäres SML deutscher Basiszähler.
+
+## Home Assistant
+
+Die HACS-Integration überträgt drei vorhandene Spannungs-Sensoren aus Home Assistant, optional die Netzfrequenz sowie Angaben zur PV-Anlage. Nach einem ersten Upload sendet sie alle fünf Minuten.
+
+- Repository: [ha_ortsnetz_auslastung](https://github.com/thomaslehmann1234/ha_ortsnetz_auslastung)
+- Messquelle: beliebige numerische Home-Assistant-Sensor-Entitäten für L1/L2/L3 in Volt
+- Voraussetzung: Home Assistant mit installiertem HACS
+
+Die Einrichtung erfolgt in HACS als benutzerdefiniertes Repository. In der Integration werden die drei Spannungs-Sensoren ausgewählt; Standort, Netzfrequenz, PV-Anlagengröße und PV-Forecast sind optional konfigurierbar.
 
 ## ioBroker
 
