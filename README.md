@@ -1,31 +1,20 @@
 # Datenerfassung für Ortsnetz-Auslastung
 
-Diese Sammlung beschreibt die verfügbaren, schlanken Wege, Spannungen im lokalen Stromnetz an die Ortsnetz-Auslastung-API zu übertragen. Alle Varianten senden mindestens die Spannungen von L1, L2 und L3, einen UTC-Zeitstempel und den ungefähren Standort. Keine Variante benötigt einen API-Schlüssel.
+Diese Sammlung beschreibt die verfügbaren Wege, Spannungen im lokalen Stromnetz an die Ortsnetz-Auslastung-API zu übertragen. Alle Varianten senden mindestens die Spannungen von L1, L2 und L3, einen UTC-Zeitstempel und den ungefähren Standort. 
 
 ## Integrationen im Überblick
 
 | Integration | Messquelle | Laufzeit | Upload | Geeignet für |
 | --- | --- | --- | --- | --- |
-| [Homey](#homey--solaredge-modbus-tcp) | SolarEdge Energy Meter über Modbus TCP | Homey Pro | Homey-App | SolarEdge-Anlagen mit Homey Pro |
-| [Shelly Pro 3EM](#shelly-pro-3em) | Direkte 3-Phasen-Messung | Shelly Script | HTTPS | Kleine, eigenständige Installation |
-| [Tasmota SML](#tasmota-sml-lesekopf) | Optischer IR-Lesekopf am Smart Meter | ESP32/Tasmota-Script | HTTPS/WebQuery | Auslesen des digitalen Stromzählers |
-| [ioBroker](#iobroker) | Vorhandene Spannungs-Datenpunkte | ioBroker JavaScript | HTTPS | Bestehende ioBroker-Installation |
-
-## Homey / SolarEdge Modbus TCP
-
-Die Homey-App liest ein SolarEdge-Energy-Meter über Modbus TCP aus. Sie benötigt Homey Pro, da sie die Homey-Web-API zur Kommunikation verwendet.
-
-- Repository: [homey-ortsnetz-auslastung](https://github.com/thomaslehmann1234/homey-ortsnetz-auslastung)
-- Messquelle: SolarEdge Energy Meter, per Modbus TCP aktiv
-- Voraussetzung: IP-Adresse des Wechselrichters, freigeschaltetes Modbus TCP und ein Energy Meter mit dreiphasigen Spannungen
-
-Diese Variante ist sinnvoll, wenn SolarEdge bereits im Einsatz ist und Homey die zentrale Automatisierungsplattform ist.
+| [Shelly Pro 3EM] | Direkte 3-Phasen-Messung | Shelly Script | HTTPS | Installation auf dem Shelly |
+| [Tasmota] | Optischer IR-Lesekopf am Stromzähler | ESP32/Tasmota-Script | HTTPS/Webquery | Installation auf dem Lesekopf |
+| [ioBroker] | Vorhandene Spannungs-Datenpunkte | ioBroker JavaScript | HTTPS | Bestehende ioBroker-Installation |
 
 ## Shelly Pro 3EM
 
 Ein JavaScript für Shelly Plus/Pro liest die drei Spannungen direkt über `em:0` und sendet sie im Fünf-Minuten-Takt. Das Script prüft dabei Werte außerhalb von 150–300 V.
 
-- Repository: lokal `shelly-ortsnetz-auslastung`
+- Ordner: `shelly-ortsnetz-auslastung`
 - Messquelle: Shelly Pro 3EM
 - Voraussetzung: Shelly-Scripting, WLAN und Internetzugang
 
@@ -35,7 +24,7 @@ Siehe die Installations- und Konfigurationshinweise im jeweiligen Repository.
 
 Ein ESP32 mit optischem Lesekopf liest SML-Telegramme des Stromzählers und überträgt die OBIS-Werte für L1, L2, L3 und optional die Frequenz direkt per `WebQuery`.
 
-- Repository: lokal `tasmota-ortsnetz-auslastung`
+- Ordner: lokal `tasmota-ortsnetz-auslastung`
 - Messquelle: digitaler Stromzähler mit optischer Schnittstelle
 - Voraussetzung: ESP32 (HTTPS), selbst kompilierte Tasmota-Firmware mit `USE_SCRIPT` und `USE_SML_M`, freigeschaltete Info-Schnittstelle des Zählers
 
