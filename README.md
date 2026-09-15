@@ -2,6 +2,17 @@
 
 Diese Sammlung beschreibt die verfügbaren Wege, Spannungen im lokalen Stromnetz an die Ortsnetz-Auslastung-API zu übertragen. Alle Varianten senden mindestens die Spannungen von L1, L2 und L3, einen UTC-Zeitstempel und den ungefähren Standort. 
 
+## Schnellnavigation
+
+- [Integrationen im Überblick](#integrationen-im-überblick)
+- [Home Assistant](#home-assistant)
+- [Shelly Pro 3EM](#shelly-pro-3em)
+- [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf)
+- [ioBroker](#iobroker)
+- [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
+- [API](#api)
+- [Standortkoordinaten](#standortkoordinaten)
+
 ## Integrationen im Überblick
 
 | Integration | Messquelle | Laufzeit | Upload | Geeignet für |
