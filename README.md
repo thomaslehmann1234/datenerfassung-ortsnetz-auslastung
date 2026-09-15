@@ -17,10 +17,10 @@ Diese Sammlung beschreibt die verfügbaren Wege, Spannungen im lokalen Stromnetz
 
 | Integration | Messquelle | Laufzeit | Upload | Geeignet für |
 | --- | --- | --- | --- | --- |
+| [Shelly Pro 3EM](#shelly-pro-3em) | Direkte 3-Phasen-Messung | Shelly Script | HTTPS | Installation auf dem Shelly |
+| [Tasmota](#tasmota-sml-lesekopf) | Optischer IR-Lesekopf am Stromzähler | ESP32/Tasmota-Script | HTTPS/Webquery | Installation auf dem Lesekopf |
 | [Home Assistant](#home-assistant) | Bestehende Spannungs-Sensoren | Home Assistant / HACS | HTTPS | Bestehende Home-Assistant-Installation |
-| [Shelly Pro 3EM] | Direkte 3-Phasen-Messung | Shelly Script | HTTPS | Installation auf dem Shelly |
-| [Tasmota] | Optischer IR-Lesekopf am Stromzähler | ESP32/Tasmota-Script | HTTPS/Webquery | Installation auf dem Lesekopf |
-| [ioBroker] | Vorhandene Spannungs-Datenpunkte | ioBroker JavaScript | HTTPS | Bestehende ioBroker-Installation |
+| [ioBroker](#iobroker) | Vorhandene Spannungs-Datenpunkte | ioBroker JavaScript | HTTPS | Bestehende ioBroker-Installation |
 
 ## Shelly Pro 3EM
 
