@@ -10,6 +10,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [Home Assistant](#home-assistant)
 - [ioBroker](#iobroker)
 - [MQTT](#mqtt)
+- [evcc](#evcc)
 - [Victron GX](#victron-gx)
 - [Volkszähler](#volkszähler)
 - [KOSTAL KSEM](#kostal-ksem)
@@ -29,6 +30,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [Home Assistant](#home-assistant) | Vorhandene Spannungssensoren | Home Assistant / HACS | HTTPS | Home-Assistant-Installationen |
 | [ioBroker](#iobroker) | Vorhandene Spannungsdatenpunkte | ioBroker JavaScript | HTTPS | ioBroker-Installationen |
 | [MQTT](#mqtt) | MQTT-Topics | Node.js / Docker | HTTPS | Smart-Meter-Gateways mit MQTT und EVCC |
+| [evcc](#evcc) | Shelly Gen2/3 oder Modbus TCP | Python / cron | HTTPS | evcc-Installationen mit direktem Zählerzugriff |
 | [Victron GX](#victron-gx) | VE.Bus oder Netzzähler über D-Bus | Python / Venus OS | HTTPS | Victron GX-Geräte |
 | [Volkszähler](#volkszähler) | Volkszähler-Middleware | Python / cron | HTTPS | Smart Meter mit Volkszähler |
 | [KOSTAL KSEM](#kostal-ksem) | KOSTAL Smart Energy Meter | Node-RED / Modbus | HTTPS | KSEM mit Node-RED |
@@ -92,6 +94,16 @@ Ein eigenständiges Node.js-Script abonniert drei Spannungs-Topics und optional 
 - Voraussetzung: Node.js ab Version 24 oder Docker, erreichbarer MQTT-Broker und Internetzugang
 
 Die Konfiguration erfolgt im `CONFIG`-Block des Scripts. Unterstützt werden numerische Payloads sowie JSON-Payloads mit konfigurierbarem Schlüssel. Details stehen in der [MQTT-README](mqtt-ortsnetz-auslastung/README.md).
+
+## evcc
+
+Die evcc-Integration nutzt die gleiche direkte Messquelle wie evcc: Shelly Gen2/3 EM per RPC oder einen Modbus-TCP-Zähler. Das Python-Script wird von evcc alle fünf Minuten gestartet und überträgt L1 bis L3 sowie optional Frequenz, PV-Daten und Zähler-Modell.
+
+- Ordner: [`evcc-ortsnetz-auslastung`](evcc-ortsnetz-auslastung)
+- Script: [`ortsnetz_evcc.py`](evcc-ortsnetz-auslastung/ortsnetz_evcc.py)
+- Voraussetzungen: Python ab 3.8, cron sowie Zugriff auf Shelly oder Modbus TCP
+
+Konfiguration und Start stehen in der [evcc-README](evcc-ortsnetz-auslastung/README.md).
 
 ## Victron GX
 
