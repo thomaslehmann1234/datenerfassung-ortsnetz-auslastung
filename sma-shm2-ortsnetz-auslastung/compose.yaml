@@ -1,0 +1,15 @@
+# Multicast-Empfang braucht ein Interface im Zähler-Netz. network_mode: host
+# ist der einfachste Weg; ORTSNETZ_INTERFACE_IP auf die Host-IP im Zähler-Netz
+# setzen. Alternativ ein macvlan-Netz verwenden (siehe README).
+services:
+  ortsnetz-sma-shm2:
+    build: .
+    container_name: ortsnetz-sma-shm2
+    network_mode: host
+    environment:
+      ORTSNETZ_LATITUDE: "${ORTSNETZ_LATITUDE:?Breitengrad des Messorts in .env setzen}"
+      ORTSNETZ_LONGITUDE: "${ORTSNETZ_LONGITUDE:?Längengrad des Messorts in .env setzen}"
+      ORTSNETZ_INTERFACE_IP: "${ORTSNETZ_INTERFACE_IP:-0.0.0.0}"
+      ORTSNETZ_METER_SERIAL: "${ORTSNETZ_METER_SERIAL:-}"
+      ORTSNETZ_INTERVAL_S: "${ORTSNETZ_INTERVAL_S:-300}"
+    restart: unless-stopped
