@@ -16,6 +16,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [KOSTAL KSEM](#kostal-ksem)
 - [openHAB](#openhab)
 - [Fronius](#fronius)
+- [USV mit NUT](#usv-mit-nut)
 - [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
 - [API](#api)
 - [Koordinaten](#koordinaten)
@@ -36,6 +37,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [KOSTAL KSEM](#kostal-ksem) | KOSTAL Smart Energy Meter | Node-RED / Modbus | HTTPS | KSEM mit Node-RED |
 | [openHAB](#openhab) | Vorhandene Smart-Meter-Items | openHAB JavaScript-Regel | HTTPS | openHAB-Installationen |
 | [Fronius](#fronius) | Fronius Smart Meter über die Solar API | Python / cron | HTTPS | Fronius-Wechselrichter mit Smart Meter |
+| [USV mit NUT](#usv-mit-nut) | USV-Eingangsspannung über NUT | Shell / cron | HTTPS | NUT-kompatible einphasige USVs |
 
 ## Shelly Pro 3EM und Pro EM50
 
@@ -156,6 +158,16 @@ Das Python-Script liest die Phasenspannungen und die Netzfrequenz des Fronius Sm
 - Voraussetzungen: Fronius-Wechselrichter mit Fronius Smart Meter am Netzeinspeisepunkt, aktivierte Solar API, Linux mit Python ab 3.8, cron und Internetzugang
 
 Aktivierung der Solar API, Konfiguration und cron-Eintrag stehen in der [Fronius-README](fronius-ortsnetz-auslastung/README.md).
+
+## USV mit NUT
+
+Das Shell-Script liest die Eingangsspannung einer über NUT eingebundenen einphasigen USV aus. Es überträgt nur bei Netzbetrieb (`OL`), damit keine Werte aus dem Batteriebetrieb als Netzspannung gemeldet werden. L2 und L3 werden als `-1` gesendet.
+
+- Ordner: [`ups-ortsnetz-auslastung`](ups-ortsnetz-auslastung)
+- Script: [`ortsnetz-ups.sh`](ups-ortsnetz-auslastung/ortsnetz-ups.sh)
+- Voraussetzungen: NUT mit `upsc`, `curl`, Shell-Zugang, cron und Internetzugang
+
+Installation, Konfiguration und der Cron-Eintrag stehen in der [NUT-USV-Anleitung](ups-ortsnetz-auslastung/ortsnetz_ups.md).
 
 ## Gemeinsame Eigenschaften
 
