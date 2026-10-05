@@ -60,11 +60,18 @@ LOG="/share/Public/ortsnetz-ups.log"
 # Messwerte aus NUT lesen
 # ------------------------------------------------------------
 
-VOLTAGE="$(upsc "$UPS_NAME" input.voltage 2>/dev/null)"
-STATUS="$(upsc "$UPS_NAME" ups.status 2>/dev/null)"
-
 # Zeitstempel in UTC / ISO 8601
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+if ! VOLTAGE="$(upsc "$UPS_NAME" input.voltage 2>/dev/null)"; then
+    echo "$TIMESTAMP upsc_failed metric=input.voltage" >> "$LOG"
+    exit 1
+fi
+
+if ! STATUS="$(upsc "$UPS_NAME" ups.status 2>/dev/null)"; then
+    echo "$TIMESTAMP upsc_failed metric=ups.status" >> "$LOG"
+    exit 1
+fi
 
 
 # ------------------------------------------------------------
@@ -124,12 +131,15 @@ EOF
 TMP_RESPONSE="/tmp/ortsnetz-response.$$"
 
 HTTP_CODE="$(curl -sS \
+    --connect-timeout 10 \
+    --max-time 20 \
     -o "$TMP_RESPONSE" \
     -w '%{http_code}' \
     -H 'Content-Type: application/json' \
     -X POST \
     -d "$PAYLOAD" \
     "$API_URL")"
+CURL_EXIT=$?
 
 RESPONSE="$(cat "$TMP_RESPONSE" 2>/dev/null)"
 
@@ -146,6 +156,10 @@ echo "$TIMESTAMP voltage=$VOLTAGE status=\"$STATUS\" http=$HTTP_CODE response='$
 
 # Temporäre Datei entfernen
 rm -f "$TMP_RESPONSE"
+
+if [ "$CURL_EXIT" -ne 0 ]; then
+    exit 1
+fi
 
 
 # ------------------------------------------------------------
