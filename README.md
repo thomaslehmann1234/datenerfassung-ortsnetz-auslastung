@@ -16,6 +16,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [KOSTAL KSEM](#kostal-ksem)
 - [openHAB](#openhab)
 - [Fronius](#fronius)
+- [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate)
 - [USV mit NUT](#usv-mit-nut)
 - [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
 - [API](#api)
@@ -37,6 +38,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [KOSTAL KSEM](#kostal-ksem) | KOSTAL Smart Energy Meter | Node-RED / Modbus | HTTPS | KSEM mit Node-RED |
 | [openHAB](#openhab) | Vorhandene Smart-Meter-Items | openHAB JavaScript-Regel | HTTPS | openHAB-Installationen |
 | [Fronius](#fronius) | Fronius Smart Meter über die Solar API | Python / cron | HTTPS | Fronius-Wechselrichter mit Smart Meter |
+| [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate) | REST-API des Messgeräts | Node.js / Docker | HTTPS | Siemens PAC 4200/4220 und ähnliche Energiemessgeräte |
 | [USV mit NUT](#usv-mit-nut) | USV-Eingangsspannung über NUT | Shell / cron | HTTPS | NUT-kompatible einphasige USVs |
 
 ## Shelly Pro 3EM und Pro EM50
@@ -158,6 +160,16 @@ Das Python-Script liest die Phasenspannungen und die Netzfrequenz des Fronius Sm
 - Voraussetzungen: Fronius-Wechselrichter mit Fronius Smart Meter am Netzeinspeisepunkt, aktivierte Solar API, Linux mit Python ab 3.8, cron und Internetzugang
 
 Aktivierung der Solar API, Konfiguration und cron-Eintrag stehen in der [Fronius-README](fronius-ortsnetz-auslastung/README.md).
+
+## Siemens PAC Energiemessgeräte
+
+Das Node.js-Script liest die Phasenspannungen und die Netzfrequenz über die lokale REST API des Messgeräts und wird alle fünf Minuten ausgeführt. Es erkennt automatisch das API-Format (`data.json` mit `type=INST_VALUES` oder `/api-webserver/values/base`) sowie den Zählernamen. Konfiguration erfolgt über Umgebungsvariablen; einphasige Geräte werden mit `-1` für nicht vorhandene Phasen unterstützt.
+
+- Ordner: [`siemens-pac-ortsnetz-auslastung`](siemens-pac-ortsnetz-auslastung)
+- Script: [`ortsnetz-siemens-pac.js`](siemens-pac-ortsnetz-auslastung/ortsnetz-siemens-pac.js)
+- Voraussetzungen: Siemens-Messgerät mit REST-API, Node.js ab 18 oder Docker und Internetzugang
+
+Installation und Umgebungsvariablen stehen in der [Siemens-README](siemens-pac-ortsnetz-auslastung/README.md).
 
 ## USV mit NUT
 

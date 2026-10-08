@@ -1,0 +1,11 @@
+services:
+  ortsnetz-siemens-pac:
+    build: .
+    container_name: ortsnetz-siemens-pac
+    env_file: .env
+    environment:
+      ORTSNETZ_DEVICE_IP: "${ORTSNETZ_DEVICE_IP:?IP des Messgeräts in .env setzen}"
+      ORTSNETZ_LATITUDE: "${ORTSNETZ_LATITUDE:?Breitengrad des Messorts in .env setzen}"
+      ORTSNETZ_LONGITUDE: "${ORTSNETZ_LONGITUDE:?Längengrad des Messorts in .env setzen}"
+      ORTSNETZ_INTERVAL_S: "${ORTSNETZ_INTERVAL_S:-300}"
+    restart: unless-stopped
