@@ -18,6 +18,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [Fronius](#fronius)
 - [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate)
 - [USV mit NUT](#usv-mit-nut)
+- [WeeWX](#weewx)
 - [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
 - [API](#api)
 - [Koordinaten](#koordinaten)
@@ -40,6 +41,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [Fronius](#fronius) | Fronius Smart Meter über die Solar API | Python / cron | HTTPS | Fronius-Wechselrichter mit Smart Meter |
 | [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate) | REST-API des Messgeräts | Node.js / Docker | HTTPS | Siemens PAC 4200/4220 und ähnliche Energiemessgeräte |
 | [USV mit NUT](#usv-mit-nut) | USV-Eingangsspannung über NUT | Shell / cron | HTTPS | NUT-kompatible einphasige USVs |
+| [WeeWX](#weewx) | Vorhandene Sensoren | Python / systemd | HTTPS | WeeWX mit Zusatzmodul
 
 ## Shelly Pro 3EM und Pro EM50
 
@@ -180,6 +182,13 @@ Das Shell-Script liest die Eingangsspannung einer über NUT eingebundenen einpha
 - Voraussetzungen: NUT mit `upsc`, `curl`, Shell-Zugang, cron und Internetzugang
 
 Installation, Konfiguration und der Cron-Eintrag stehen in der [NUT-USV-Anleitung](ups-ortsnetz-auslastung/ortsnetz_ups.md).
+
+## WeeWX
+
+- Ordner: [`weewx-ortsnetz-auslastung`](weewx-ortsnetz-auslastung)
+- Voraussetzungen: Installation von WeeWX und eines WeeWX-Zusatzmoduls zur Abfrage des Umrichters
+
+Installation und Konfiguration stehen in der [WeeWX-README](weewx-ortsnetz-auslastung/README.md).
 
 ## Gemeinsame Eigenschaften
 
