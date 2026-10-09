@@ -1,4 +1,5 @@
-<!-- Version: 0.1.0 | Erstellt: 2026-10-08 | Geändert: 2026-10-08 - V0.1.0: Erstversion -->
+<!-- Version: 0.1.1 | Erstellt: 2026-10-08 | Geändert: 2026-10-09 - V0.1.1: Installation und systemd-Unit mit venv (Raspberry Pi OS ab Bookworm); Erster Test mit venv-Python
+          2026-10-08 - V0.1.0: Erstversion -->
 
 # Ortsnetz-Auslastung für SAX Power Smartmeter
 
@@ -8,16 +9,18 @@ Ein eigenständiges Python-Script. Es liest die Phasenspannungen L1, L2, L3 und 
 
 - SAX Power Home oder Home Plus mit Smartmeter, Modbus TCP aktiviert (Unit-ID 100, SunSpec-Modus)
 - Dauerhaft laufender Rechner mit Internetzugang im selben Netz wie der SAX-Master, z. B. Raspberry Pi
-- Python ab Version 3.8 und das Paket `pyModbusTCP`
+- Python ab Version 3.8 mit `venv` (unter Raspberry Pi OS: `sudo apt install python3-venv`); das Paket `pyModbusTCP` wird in der venv installiert
 - Koordinaten des Messorts, bestimmbar über [OpenStreetMap](https://www.openstreetmap.org/): Ort suchen, Rechtsklick auf die Karte, **„Abfrage starten“**
 
 ## Installation
 
 1. Ordner nach `/opt/ortsnetz-auslastung/sax/` kopieren.
-2. Abhängigkeit installieren:
+2. Virtuelle Umgebung anlegen und Abhängigkeit installieren. Ab Raspberry Pi OS Bookworm ist `pip` systemweit gesperrt, die venv vermeidet das:
 
    ```sh
-   pip3 install -r /opt/ortsnetz-auslastung/sax/requirements.txt
+   cd /opt/ortsnetz-auslastung/sax
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
    ```
 
 3. Im `CONFIG`-Block von [sax_ortsnetz_auslastung.py](sax_ortsnetz_auslastung.py) mindestens `latitude`, `longitude` und `modbus_host` anpassen.
@@ -45,26 +48,26 @@ Bei mehreren Speichern nur den **Master** abfragen; die Werte der Slaves sind do
 1. Ohne Zähler prüfen, ob das Script läuft (Testwerte, kein Netzwerkzugriff):
 
    ```sh
-   python3 sax_ortsnetz_auslastung.py --dry-run --simulate
+   .venv/bin/python sax_ortsnetz_auslastung.py --dry-run --simulate
    ```
 
 2. Mit echtem Zähler lesen, ohne zu senden. Die Spannungen mit einer vorhandenen Anzeige vergleichen:
 
    ```sh
-   python3 sax_ortsnetz_auslastung.py --dry-run
+   .venv/bin/python sax_ortsnetz_auslastung.py --dry-run
    ```
 
 3. Echter Upload: Script ohne Option starten. Die Log-Zeile `Gesendet (HTTP 202)` bestätigt die Annahme.
 
    ```sh
-   python3 sax_ortsnetz_auslastung.py
+   .venv/bin/python sax_ortsnetz_auslastung.py
    ```
 
 `--dry-run` liefert Exitcode 0 bei Erfolg, 1 bei Lesefehlern und 2 bei ungültiger Konfiguration.
 
 ## Dauerbetrieb mit systemd
 
-Datei `/etc/systemd/system/ortsnetz-sax.service`:
+Datei `/etc/systemd/system/ortsnetz-sax.service` (Pfade an die eigene Installation anpassen; bei Bedarf `User=` ergänzen):
 
 ```ini
 [Unit]
@@ -73,7 +76,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/ortsnetz-auslastung/sax/sax_ortsnetz_auslastung.py
+ExecStart=/opt/ortsnetz-auslastung/sax/.venv/bin/python /opt/ortsnetz-auslastung/sax/sax_ortsnetz_auslastung.py
 Restart=always
 RestartSec=30
 
@@ -107,7 +110,7 @@ docker run -d --restart unless-stopped --name ortsnetz-sax \
 - Es werden keine Zählernummern, Gerätekennungen, IP-Adressen oder Energiezähler gelesen oder gesendet.
 - Bei `Verbindung fehlgeschlagen` Host, Port und Modbus-Freigabe des Masters prüfen. Bei `L1 nicht plausibel` Unit-ID 100 und das Modell des Zählers prüfen.
 
-Tests ohne Zähler: `python3 test_sax.py`
+Tests ohne Zähler: `.venv/bin/python test_sax.py`
 
 ## API
 
