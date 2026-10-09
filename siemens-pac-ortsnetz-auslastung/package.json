@@ -5,7 +5,8 @@
 	"description": "Liest L1-, L2-, L3-Spannung und Netzfrequenz von Siemens SENTRON PAC Messgeräten über die REST API und überträgt sie an die Ortsnetz-Auslastung-API.",
 	"main": "ortsnetz-siemens-pac.js",
 	"scripts": {
-		"start": "node --env-file .env ortsnetz-siemens-pac.js"
+		"start": "node --env-file .env ortsnetz-siemens-pac.js",
+		"test": "node --test test-siemens-pac.js"
 	},
 	"engines": { "node": ">=18" }
 }
