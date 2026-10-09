@@ -11,6 +11,8 @@ CONFIG = """[StdRESTful]
         enable = true
         # dry run (skip the upload)
         skip_upload = false
+        # minimum interval between uploads in seconds (at least 300)
+        post_interval = 300
         # log data to send
         log_url = false
         # name of the measuring device

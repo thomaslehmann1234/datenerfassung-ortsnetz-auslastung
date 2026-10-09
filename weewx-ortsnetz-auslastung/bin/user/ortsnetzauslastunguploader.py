@@ -29,6 +29,8 @@
             enable = true
             # dry run (skip the upload)
             skip_upload = false
+            # minimum interval between uploads in seconds (at least 300)
+            post_interval = 300
             # log data to send
             log_url = false
             # name of the measuring device
@@ -141,12 +143,14 @@ class RESTThread(weewx.restx.RESTThread):
                  smartmeter_model, integration_version,
                  server_url=RESTful.DEFAULT_URL,
                  skip_upload=False, manager_dict=None,
-                 post_interval=None, max_backlog=sys.maxsize, stale=None,
+                 post_interval=300, max_backlog=sys.maxsize, stale=None,
                  log_success=True, log_failure=True,
                  timeout=60, max_tries=3, retry_wait=5,
                  log_url=False):
         """ initialize thread
         """
+        # Keep a five-minute minimum even when a shorter interval is configured.
+        post_interval = max(300, to_int(post_interval) or 300)
         super(RESTThread, self).__init__(q,
             protocol_name='ortsnetz-auslastung',
                                          manager_dict=manager_dict,
@@ -157,7 +161,8 @@ class RESTThread(weewx.restx.RESTThread):
                                           log_failure=log_failure,
                                           max_tries=max_tries,
                                           timeout=timeout,
-                                          retry_wait=retry_wait)
+                                          retry_wait=retry_wait,
+                                          skip_upload=skip_upload)
         self.formatter=weewx.units.Formatter()
         # where to upload
         self.server_url = server_url

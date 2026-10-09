@@ -73,6 +73,8 @@ The configuration section in `weewx.conf` looks like this:
         enable = true
         # dry run (skip the upload)
         skip_upload = false
+        # minimum interval between uploads in seconds (at least 300)
+        post_interval = 300
         # log data to send
         log_url = false
         # name of the measuring device
@@ -100,6 +102,9 @@ The configuration section in `weewx.conf` looks like this:
 * `enable`: Switch the uploader on and off. Optional. Default is on.
 * `skip_upload`: If set to `true` run in dry run mode. Calculate data
   but do not upload them.
+* `post_interval`: Minimum interval between uploads in seconds. Default is
+  300; smaller values are limited to 300. The uploader runs on archive events,
+  so a longer archive interval also means less frequent uploads.
 * `log_url`: If set to `true` log data to send on syslog.
 * `smartmeter_model`: Set it to the name of the measuring device that
   measures the grid voltages.
@@ -113,6 +118,17 @@ The configuration section in `weewx.conf` looks like this:
   provide the frequency.
 * `pv_forecast_kwh`: Name of the observation type that provides a 
   forecast of the daily earnings. Optional. Default is not provided.
+
+## Tests
+
+With WeeWX installed, run from the repository root:
+
+```shell
+python -m unittest discover -s weewx-ortsnetz-auslastung -p 'test_*.py'
+```
+
+The tests check dry-run behavior and the minimum upload interval without
+making network requests.
 
 ## Links
 
