@@ -28,7 +28,7 @@ def send_measurement(
         "l2_v": l2_v,
         "l3_v": l3_v,
         "smartmeter_model": "Example smart meter",
-        "integration_version": "python-example-0.1.1",
+        "integration_version": "python-example-0.2.0",
     }
     if frequency_hz is not None:
         payload["grid_frequency_hz"] = frequency_hz
