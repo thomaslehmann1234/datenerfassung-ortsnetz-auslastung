@@ -17,6 +17,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [openHAB](#openhab)
 - [Fronius](#fronius)
 - [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate)
+- [SAX Power Smartmeter](#sax-power-smartmeter)
 - [USV mit NUT](#usv-mit-nut)
 - [WeeWX](#weewx)
 - [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
@@ -40,6 +41,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [openHAB](#openhab) | Vorhandene Smart-Meter-Items | openHAB 4+ / JavaScript | HTTPS | openHAB-Installationen |
 | [Fronius](#fronius) | Fronius Smart Meter über die Solar API | Python / cron | HTTPS | Fronius-Wechselrichter mit Smart Meter |
 | [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate) | REST-API des Messgeräts | Node.js / Docker | HTTPS | Siemens PAC 4200/4220 und ähnliche Energiemessgeräte |
+| [SAX Power Smartmeter](#sax-power-smartmeter) | SAX Smartmeter über Modbus TCP | Python / systemd | HTTPS | SAX Power Home und Home Plus mit Smartmeter |
 | [USV mit NUT](#usv-mit-nut) | USV-Eingangsspannung über NUT | Shell / cron | HTTPS | NUT-kompatible einphasige USVs |
 | [WeeWX](#weewx) | Vorhandene Sensoren | Python / systemd | HTTPS | WeeWX mit Zusatzmodul
 
@@ -169,6 +171,16 @@ Das Node.js-Script liest die Phasenspannungen und die Netzfrequenz über die lok
 - Voraussetzungen: Siemens-Messgerät mit REST-API, Node.js ab 18 oder Docker und Internetzugang
 
 Installation und Umgebungsvariablen stehen in der [Siemens-README](siemens-pac-ortsnetz-auslastung/README.md).
+
+## SAX Power Smartmeter
+
+Das Python-Script liest die Phasenspannungen und die Netzfrequenz des SAX-Smartmeters (SunSpec Model 203) per Modbus TCP vom SAX-Master und sendet sofort nach dem Start und danach alle fünf Minuten. Nicht plausible Phasen werden mit `-1` gesendet; Zählernummern und Energiezähler werden nicht gelesen. Mit `--simulate` lässt sich das Script ohne Zähler testen.
+
+- Ordner: [`sax-ortsnetz-auslastung`](sax-ortsnetz-auslastung)
+- Script: [`sax_ortsnetz_auslastung.py`](sax-ortsnetz-auslastung/sax_ortsnetz_auslastung.py)
+- Voraussetzungen: SAX Power Home oder Home Plus mit Smartmeter und aktiviertem Modbus TCP, Python ab 3.8 mit `pyModbusTCP` und Internetzugang
+
+Installation, Konfiguration und systemd-Beispiel stehen in der [SAX-README](sax-ortsnetz-auslastung/README.md).
 
 ## USV mit NUT
 
