@@ -9,6 +9,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf)
 - [Home Assistant](#home-assistant)
 - [ioBroker](#iobroker)
+- [FHEM](#fhem)
 - [MQTT](#mqtt)
 - [evcc](#evcc)
 - [Victron GX](#victron-gx)
@@ -35,6 +36,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf) | Optische Smart-Meter-Schnittstelle | ESP32 / Tasmota Script | HTTPS / WebQuery | SML-fähige Stromzähler |
 | [Home Assistant](#home-assistant) | Vorhandene Spannungssensoren | Home Assistant / HACS | HTTPS | Home-Assistant-Installationen |
 | [ioBroker](#iobroker) | Vorhandene Spannungsdatenpunkte | ioBroker JavaScript | HTTPS | ioBroker-Installationen |
+| [FHEM](#fhem) | Vorhandene Spannungs-Readings | FHEM `at` (Perl) | HTTPS | FHEM-Installationen |
 | [MQTT](#mqtt) | MQTT-Topics | Node.js / Docker | HTTPS | Smart-Meter-Gateways mit MQTT und EVCC |
 | [evcc](#evcc) | Shelly Gen2/3 oder Modbus TCP | Python / cron | HTTPS | evcc-Installationen mit direktem Zählerzugriff |
 | [Victron GX](#victron-gx) | VE.Bus oder Netzzähler über D-Bus | Python / Venus OS | HTTPS | Victron GX-Geräte |
@@ -96,6 +98,15 @@ Das Script für den JavaScript-Adapter liest drei konfigurierte Spannungsdatenpu
 - Anleitung: [ioBroker-README](iobroker-ortsnetz-auslastung/README.md)
 
 Das Script verwendet den eingebauten Helfer `httpPost` und benötigt keine zusätzliche npm-Abhängigkeit.
+
+## FHEM
+
+Ein einzelnes FHEM-`at` liest drei vorhandene Spannungs-Readings und optional die Netzfrequenz und sendet sie alle fünf Minuten. Die Antwort der API (Ampel, Speicherladeempfehlung, Redispatch) steht anschließend als Readings zur Verfügung.
+
+- Ordner: [`fhem-ortsnetz-auslastung`](fhem-ortsnetz-auslastung)
+- Code: [`at_ortsnetz.txt`](fhem-ortsnetz-auslastung/at_ortsnetz.txt), wird im DEF-Feld eines leeren `at` eingefügt
+- Voraussetzungen: FHEM, Perl-Modul `IO::Socket::SSL` und Internetzugang
+- Anleitung: [FHEM-README](fhem-ortsnetz-auslastung/README.md)
 
 ## MQTT
 
