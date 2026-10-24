@@ -12,6 +12,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [MQTT](#mqtt)
 - [evcc](#evcc)
 - [Victron GX](#victron-gx)
+- [Victron GX Extern](#victron-gx-extern)
 - [Carlo Gavazzi EM24 (Community)](#carlo-gavazzi-em24-community)
 - [Volkszähler](#volkszähler)
 - [KOSTAL KSEM](#kostal-ksem)
@@ -126,6 +127,14 @@ Das Python-Script läuft direkt auf Venus OS und liest Netzspannungen über den 
 - Voraussetzungen: Victron GX mit Venus OS, VE.Bus-Gerät oder Netzzähler, SSH-Zugang und Internetzugang
 
 Installation, Konfiguration und Autostart stehen in der [Victron-GX-README](victron-gx-ortsnetz-auslastung/README.md).
+
+## Victron GX Extern
+
+Das PHP-Script wird nicht auf Venus OS installiert. Das Script läuft als Dienst und liest alle 5 Minuten die Netzspannug und Netzfrequenz aus dem MQTT Broker aus.
+
+- Ordner: [`victron-gx-ortsnetzauslastung-mqtt-php`](victron-gx-ortsnetzauslastung-mqtt-php)
+- Script: [`victron-ortsnetz.php`](victron-gx-ortsnetzauslastung-mqtt-php/victron-ortsnetz.php)
+- Voraussetzungen: Ein Gerät das 24/7 läuft läuft und auf dem PHP installiert ist mit Zugang zum Internet. Erreichbarkeit des Cerbo GX mit freigeschaltetem MQTT. 
 
 ## Carlo Gavazzi EM24 (Community)
 

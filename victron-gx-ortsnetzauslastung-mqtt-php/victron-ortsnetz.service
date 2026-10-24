@@ -1,0 +1,15 @@
+[Unit]
+Description=Victron GX (MQTT) -> ortsnetz-auslastung.de
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/html/test/victron-ortsnetz
+ExecStart=/usr/bin/php /var/www/html/test/victron-ortsnetz/victron-ortsnetz.php
+Restart=always
+RestartSec=30
+User=www-data
+
+[Install]
+WantedBy=multi-user.target
