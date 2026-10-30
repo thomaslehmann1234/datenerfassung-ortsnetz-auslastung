@@ -1,13 +1,13 @@
-// Shelly PM Mini Gen3 (oder sogar alle Generationen) script für Ortsnetz-Auslastung angepasst aus
+// Shelly Plus PM Mini (Gen2), PM Mini & Plug PM (Gen3) script für Ortsnetz-Auslastung angepasst aus
 
 // Shelly Pro 3EM / Pro 3EM-400 script for Ortsnetz-Auslastung.
 // https://www.ortsnetz-auslastung.de/
 // Set the four values in CONFIG before enabling the script.
 // Datei: PostData_ShellyPro3EM_ortsnetz-auslastung_V011_200926.txt
 // Autor: Thomas Lehmann / Juergen Gensicke
-// Anpassung für Shelly PlusPlugS/PlugS Gen2+: DancerVLT69
+// Anpassung für Shelly Plus PM Mini (Gen2), PM Mini & Plug PM (Gen3): DancerVLT69
 // https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung
-// VERSION = "0.0.1" vom 27.10.26
+// VERSION = "0.0.2" vom 30.10.26
 // IP: 192.168.x.y
 
 // for Debug:
@@ -21,7 +21,7 @@ let CONFIG = {
   intervalMs: 300000
 };
 
-let VERSION = "0.0.1";
+let VERSION = "0.0.2";
 
 function validVoltage(value) {
   return typeof value === "number" && value >= 150 && value <= 300;
@@ -57,7 +57,7 @@ function sendMeasurement() {
 		l3_v: -1, // em.c_voltage,
 		grid_frequency_hz: validFrequency(em.freq) ? em.freq : null,
 		smartmeter_model: CONFIG.smartmeterModel,
-		integration_version: "shelly-plugs-" + VERSION
+		integration_version: "shelly-pm-" + VERSION
 	};
 
 	let payload_body = JSON.stringify(payload);
