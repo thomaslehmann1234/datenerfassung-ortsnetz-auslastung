@@ -1,6 +1,7 @@
 """Regressionstests mit synthetischen SMA-Telegrammen, ohne Netzwerkzugriffe."""
 
 import contextlib
+import http.client
 import importlib.util
 import io
 import json
@@ -238,10 +239,33 @@ class ExterneFrequenzTest(SmaBasis):
         self.frequenzquelle(b'{"Fac": 49.9}')
         self.assertEqual(self.frequenz({32: 230000, 14: 60000}), 49.9)
 
+    def test_grenzwerte_sind_gueltig(self):
+        for daten, erwartet in ((b'{"Fac": 45}', 45.0), (b'{"Fac": 55}', 55.0),
+                                (b'{"Fac": "55.0"}', 55.0)):
+            with self.subTest(daten=daten):
+                self.frequenzquelle(daten)
+                self.assertEqual(self.frequenz({32: 230000}), erwartet)
+        self.http.reset_mock()
+        for roh, erwartet in ((45000, 45.0), (55000, 55.0)):
+            with self.subTest(roh=roh):
+                self.assertEqual(self.frequenz({32: 230000, 14: roh}), erwartet)
+        self.http.assert_not_called()
+
+    def test_unplausible_zaehlerfrequenz_ohne_quelle_bleibt_leer(self):
+        self.assertIsNone(self.frequenz({32: 230000, 14: 60000}))
+        self.http.assert_not_called()
+
+    def test_unplausible_zaehlerfrequenz_und_defekte_quelle(self):
+        self.frequenzquelle(b"{}")
+        self.assertIsNone(self.frequenz({32: 230000, 14: 60000}))
+        self.http.assert_called_once()
+
     def test_fehler_der_quelle_liefert_messung_ohne_frequenz(self):
+        zu_gross = b'{"Fac": 50, "x": "' + b"a" * sma.FREQUENZ_MAX_BYTES + b'"}'
         for daten in (b"kein json", b"[]", b"{}", b'{"Fac": null}',
                       b'{"Fac": true}', b'{"Fac": "abc"}', b'{"Fac": "nan"}',
-                      b'{"Fac": 60}', b'{"Fac": 44.99}', b'{"Fac": [50]}'):
+                      b'{"Fac": 60}', b'{"Fac": 44.99}', b'{"Fac": [50]}',
+                      b'{"Fac": 1' + b"0" * 400 + b"}", b"[" * 50000, zu_gross):
             with self.subTest(daten=daten):
                 self.frequenzquelle(daten)
                 payload = sma.payload_erstellen({32: 230000})
@@ -254,26 +278,62 @@ class ExterneFrequenzTest(SmaBasis):
         abgelehnt = sma.urllib.error.HTTPError(
             FREQUENZ_URL, 401, "unauthorized", {}, None)
         for fehler in (sma.urllib.error.URLError("offline"),
-                       socket.timeout("timed out"), abgelehnt):
+                       socket.timeout("timed out"), abgelehnt,
+                       http.client.IncompleteRead(b""),
+                       http.client.BadStatusLine("kaputt")):
             with self.subTest(fehler=fehler):
                 self.http.side_effect = fehler
                 self.assertIsNone(self.frequenz({32: 230000}))
 
+    def test_log_ohne_zugangsdaten_und_query(self):
+        sma.FREQUENCY_URL = "http://nutzer:geheim@192.0.2.17:8080/status?token=xyz"
+        sma.FREQUENCY_KEY = "Fac"
+        self.http.side_effect = sma.urllib.error.URLError("offline")
+        self.assertIsNone(self.frequenz({32: 230000}))
+        log = self.ausgabe.getvalue()
+        self.assertIn("192.0.2.17:8080/status", log)
+        self.assertNotIn("geheim", log)
+        self.assertNotIn("xyz", log)
+
+    def quelle_und_api(self, *args, **kwargs):
+        if args[0] == FREQUENZ_URL:
+            return http_antwort(b'{"Fac": 49.97}')
+        return http_antwort(b'{"accepted":true}', status=202)
+
     def test_upload_enthaelt_externe_frequenz(self):
         sma.FREQUENCY_URL, sma.FREQUENCY_KEY = FREQUENZ_URL, "Fac"
-        api = http_antwort(b'{"accepted":true}', status=202)
-        self.http.side_effect = lambda ziel, timeout: (
-            http_antwort(b'{"Fac": 49.97}') if ziel == FREQUENZ_URL else api)
+        self.http.side_effect = self.quelle_und_api
         self.assertEqual(self.einmallauf(["--once"], [telegramm(SPANNUNGEN)]), 0)
-        gesendet = json.loads(self.http.call_args[0][0].data)
+        aufrufe = self.http.call_args_list
+        self.assertEqual(len(aufrufe), 2)
+        self.assertEqual(aufrufe[0][0][0], FREQUENZ_URL)
+        gesendet = json.loads(aufrufe[1][0][0].data)
         self.assertEqual(gesendet["grid_frequency_hz"], 49.97)
+
+    def test_dry_run_zeigt_externe_frequenz_ohne_upload(self):
+        sma.FREQUENCY_URL, sma.FREQUENCY_KEY = FREQUENZ_URL, "Fac"
+        self.http.side_effect = self.quelle_und_api
+        self.assertEqual(self.einmallauf(["--dry-run"], [telegramm(SPANNUNGEN)]), 0)
+        self.http.assert_called_once_with(FREQUENZ_URL, timeout=sma.FREQUENZ_TIMEOUT_S)
+        self.assertIn('"grid_frequency_hz": 49.97', self.ausgabe.getvalue())
+
+    def test_gueltige_frequenzkonfiguration(self):
+        for url, schluessel in ((FREQUENZ_URL, "Fac"),
+                                ("https://192.0.2.17:8443/a?b=c", "grid.f")):
+            with self.subTest(url=url), patch.multiple(
+                    sma, FREQUENCY_URL=url, FREQUENCY_KEY=schluessel):
+                sma.frequenzquelle_pruefen()
 
     def test_ungueltige_frequenzkonfiguration_verhindert_netzwerkzugriff(self):
         for url, schluessel in (("ftp://192.0.2.17/status", "Fac"),
                                 ("file:///etc/passwd", "Fac"),
                                 ("http://", "Fac"), ("192.0.2.17/api", "Fac"),
+                                (" http://192.0.2.17/", "Fac"),
+                                ("http://192.0.2.17/a b", "Fac"),
+                                ("http://192.0.2.17/\x00", "Fac"),
                                 (FREQUENZ_URL, None), (FREQUENZ_URL, ""),
-                                (FREQUENZ_URL, "a..b"), (None, "Fac")):
+                                (FREQUENZ_URL, "a..b"), (FREQUENZ_URL, ".Fac"),
+                                (FREQUENZ_URL, "Fac."), (None, "Fac")):
             konfiguration = {"FREQUENCY_URL": url, "FREQUENCY_KEY": schluessel}
             with self.subTest(**konfiguration), \
                     patch.multiple(sma, **konfiguration), \
@@ -291,6 +351,15 @@ class ExterneFrequenzTest(SmaBasis):
             SPEC.loader.exec_module(modul)
         self.assertEqual(modul.FREQUENCY_URL, FREQUENZ_URL)
         self.assertEqual(modul.FREQUENCY_KEY, "Fac")
+
+    def test_leere_umgebungsvariablen_wie_aus_compose(self):
+        modul = importlib.util.module_from_spec(SPEC)
+        umgebung = {"ORTSNETZ_FREQUENCY_URL": "", "ORTSNETZ_FREQUENCY_KEY": ""}
+        with patch.dict("os.environ", umgebung, clear=True):
+            SPEC.loader.exec_module(modul)
+        self.assertIsNone(modul.FREQUENCY_URL)
+        self.assertIsNone(modul.FREQUENCY_KEY)
+        modul.frequenzquelle_pruefen()
 
 
 if __name__ == "__main__":

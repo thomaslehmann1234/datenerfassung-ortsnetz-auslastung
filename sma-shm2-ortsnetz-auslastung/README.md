@@ -78,7 +78,7 @@ ORTSNETZ_FREQUENCY_KEY=Fac
 - `FREQUENCY_KEY` ist der Schlüssel des Werts in Hz; verschachtelte Schlüssel werden mit Punkt getrennt, z. B. `grid.frequency`. Zahl und Zahl als Text werden akzeptiert.
 - Eine gültige Frequenz aus dem Zähler-Telegramm hat Vorrang; die externe Quelle wird dann nicht abgefragt.
 - Ist die Quelle nicht erreichbar, der Schlüssel nicht vorhanden oder der Wert außerhalb von 45 bis 55 Hz, wird die Messung ohne Frequenz gesendet und der Grund im Log vermerkt.
-- Nur Quellen ohne Anmeldung werden unterstützt. Ob ein Gerät die Frequenz liefert, zeigt `--dry-run`.
+- Die Quelle muss den aktuellen Messwert liefern; einen Zeitstempel prüft das Script nicht. Listen im JSON und Quellen mit Anmeldung werden nicht unterstützt. Ob ein Gerät die Frequenz liefert, zeigt `--dry-run`.
 
 ## Docker
 

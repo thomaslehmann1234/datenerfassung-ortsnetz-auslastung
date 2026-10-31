@@ -17,6 +17,7 @@ Aufruf:
 """
 
 import argparse
+import http.client
 import json
 import os
 import socket
@@ -73,6 +74,7 @@ MCAST_PORT = 9522
 EMETER_PROTOCOL_ID = 0x6069
 TELEGRAM_TIMEOUT_S = 15     # maximale Wartezeit auf ein gültiges Telegramm
 FREQUENZ_TIMEOUT_S = 5      # maximale Wartezeit auf die externe Frequenzquelle
+FREQUENZ_MAX_BYTES = 65536  # größere Antworten der Quelle werden verworfen
 
 # OBIS-Messwert-Indizes im EMETER-Telegramm (Momentanwerte, Typ 4)
 OBIS_FREQUENZ = 14          # in 0,001 Hz, nur Sunny Home Manager 2.0
@@ -106,7 +108,8 @@ def frequenzquelle_pruefen():
             raise ValueError("FREQUENCY_KEY ist gesetzt, FREQUENCY_URL aber nicht.")
         return
     adresse = urllib.parse.urlsplit(FREQUENCY_URL)
-    if adresse.scheme not in ("http", "https") or not adresse.netloc:
+    unzulaessig = any(z.isspace() or not z.isprintable() for z in FREQUENCY_URL)
+    if adresse.scheme not in ("http", "https") or not adresse.netloc or unzulaessig:
         raise ValueError("FREQUENCY_URL muss eine http- oder https-Adresse sein.")
     if not FREQUENCY_KEY or "" in FREQUENCY_KEY.split("."):
         raise ValueError("FREQUENCY_KEY muss zu FREQUENCY_URL gesetzt sein, z. B. Fac.")
@@ -213,24 +216,35 @@ def frequenz_plausibel(frequenz):
     return FREQUENZ_MIN_HZ <= frequenz <= FREQUENZ_MAX_HZ
 
 
+def frequenzquelle_anzeigen():
+    """FREQUENCY_URL fürs Log, ohne Zugangsdaten und Query-Parameter."""
+    adresse = urllib.parse.urlsplit(FREQUENCY_URL)
+    return adresse.netloc.rpartition("@")[2] + adresse.path
+
+
 def externe_frequenz():
-    """Netzfrequenz aus FREQUENCY_URL; None, wenn nicht lesbar oder unplausibel."""
+    """Netzfrequenz aus FREQUENCY_URL; None, wenn nicht lesbar oder unplausibel.
+
+    Fehler der Quelle dürfen den Upload der Spannungen nie verhindern; daher
+    werden auch fehlerhafte HTTP-Antworten und entartetes JSON abgefangen.
+    """
     try:
         with urllib.request.urlopen(
             FREQUENCY_URL, timeout=FREQUENZ_TIMEOUT_S
         ) as antwort:
-            wert = json.load(antwort)
+            wert = json.loads(antwort.read(FREQUENZ_MAX_BYTES))
         for schluessel in FREQUENCY_KEY.split("."):
             wert = wert[schluessel]
         if isinstance(wert, bool):
             raise ValueError(f"Wahrheitswert {wert!r} statt Frequenz")
         frequenz = float(wert)
-    except (OSError, ValueError, KeyError, IndexError, TypeError) as fehler:
-        log(f"Frequenz aus {FREQUENCY_URL} ({FREQUENCY_KEY}) nicht lesbar, "
-            f"Messung ohne Frequenz: {fehler!r}")
+    except (OSError, ValueError, KeyError, TypeError, OverflowError,
+            RecursionError, http.client.HTTPException) as fehler:
+        log(f"Frequenz aus {frequenzquelle_anzeigen()} ({FREQUENCY_KEY}) "
+            f"nicht lesbar, Messung ohne Frequenz: {fehler!r}")
         return None
     if not frequenz_plausibel(frequenz):
-        log(f"Frequenz {frequenz} Hz aus {FREQUENCY_URL} unplausibel, "
+        log(f"Frequenz {frequenz} Hz aus {frequenzquelle_anzeigen()} unplausibel, "
             "Messung ohne Frequenz.")
         return None
     return frequenz
