@@ -232,7 +232,10 @@ def externe_frequenz():
         with urllib.request.urlopen(
             FREQUENCY_URL, timeout=FREQUENZ_TIMEOUT_S
         ) as antwort:
-            wert = json.loads(antwort.read(FREQUENZ_MAX_BYTES))
+            roh = antwort.read(FREQUENZ_MAX_BYTES + 1)
+        if len(roh) > FREQUENZ_MAX_BYTES:
+            raise ValueError(f"Antwort größer als {FREQUENZ_MAX_BYTES} Bytes")
+        wert = json.loads(roh)
         for schluessel in FREQUENCY_KEY.split("."):
             wert = wert[schluessel]
         if isinstance(wert, bool):
