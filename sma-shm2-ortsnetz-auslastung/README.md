@@ -82,6 +82,38 @@ Zugang zum Zähler-Netz für den Multicast-Empfang:
 - macvlan-Netz: eigene Container-IP im Zähler-Netz, wenn der Host dort kein Interface hat; `ORTSNETZ_INTERFACE_IP` kann auf `0.0.0.0` bleiben.
 - Dual-homed: Darf das Zähler-VLAN nicht ins Internet, zusätzlich zum macvlan-Netz ein Bridge-Netz für den Upload anbinden; `ORTSNETZ_INTERFACE_IP` dann auf die macvlan-IP des Containers setzen.
 
+### TrueNAS SCALE (Custom App)
+
+Ohne eigenes Image: Das offizielle `python:3.13-alpine` führt das Script direkt aus einem Dataset aus. Getestet mit TrueNAS 25.10.
+
+1. Dataset anlegen, z. B. `tank/apps/ortsnetz`, und `ortsnetz-sma-shm2.py` hineinkopieren. Ein neues Dataset übernimmt die ACL des übergeordneten Datasets nicht; der Gruppe `apps` (GID 568) mindestens Leserechte geben.
+2. **Apps → Discover Apps → ⋮ → Install via YAML**, Name z. B. `ortsnetz-auslastung`, und Koordinaten, Interface-IP und Dataset-Pfad anpassen:
+
+   ```yaml
+   services:
+     ortsnetz-sma-shm2:
+       image: python:3.13-alpine
+       network_mode: host
+       user: "568:568"
+       read_only: true
+       cap_drop: [ALL]
+       security_opt: [no-new-privileges:true]
+       mem_limit: 64m
+       restart: unless-stopped
+       environment:
+         PYTHONDONTWRITEBYTECODE: "1"
+         ORTSNETZ_LATITUDE: "52.520"
+         ORTSNETZ_LONGITUDE: "13.405"
+         ORTSNETZ_INTERFACE_IP: "192.168.178.10"   # IP des TrueNAS im Zähler-Netz
+       volumes:
+         - /mnt/tank/apps/ortsnetz:/app:ro
+       command: ["python3", "-u", "/app/ortsnetz-sma-shm2.py"]
+   ```
+
+- `ORTSNETZ_INTERFACE_IP` ist auf TrueNAS praktisch immer nötig: Jede App bekommt eine eigene Docker-Bridge, der Host hat dadurch viele Interfaces.
+- Erst testen: `command` vorübergehend auf `["sh", "-c", "python3 -u /app/ortsnetz-sma-shm2.py --dry-run; sleep 600"]` und `restart: "no"` setzen. Das `sleep` hält den Container am Leben, damit die Ausgabe unter **Apps → ortsnetz-auslastung → Logs** lesbar bleibt.
+- Script aktualisieren: Datei im Dataset ersetzen und die App neu starten.
+
 ## Dekodierte Messwerte
 
 | Messwert | OBIS-Index im Telegramm | Einheit im Telegramm |
