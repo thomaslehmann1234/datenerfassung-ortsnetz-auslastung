@@ -23,6 +23,7 @@ import socket
 import struct
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -55,6 +56,13 @@ INTERFACE_IP = konfig("INTERFACE_IP", "0.0.0.0", str)
 METER_SERIAL = konfig("METER_SERIAL", None, int)    # z. B. 3011478221
 
 INTERVAL_S = konfig("INTERVAL_S", 300, int)     # alle 5 Minuten
+
+# Optionale externe Quelle für die Netzfrequenz, falls der Zähler keine liefert
+# (z. B. SMA Energy Meter). Die Adresse muss JSON liefern; FREQUENCY_KEY ist der
+# Schlüssel des Werts in Hz, verschachtelte Schlüssel mit Punkt getrennt.
+# Beispiel sonnenBatterie: "http://192.168.178.50/api/v2/status" und "Fac".
+FREQUENCY_URL = konfig("FREQUENCY_URL", None, str)
+FREQUENCY_KEY = konfig("FREQUENCY_KEY", None, str)
 # -----------------------------------------------
 
 API_URL = "https://www.ortsnetz-auslastung.de/v1/measurements"
@@ -64,9 +72,12 @@ MCAST_GRP = "239.12.255.254"
 MCAST_PORT = 9522
 EMETER_PROTOCOL_ID = 0x6069
 TELEGRAM_TIMEOUT_S = 15     # maximale Wartezeit auf ein gültiges Telegramm
+FREQUENZ_TIMEOUT_S = 5      # maximale Wartezeit auf die externe Frequenzquelle
 
 # OBIS-Messwert-Indizes im EMETER-Telegramm (Momentanwerte, Typ 4)
 OBIS_FREQUENZ = 14          # in 0,001 Hz, nur Sunny Home Manager 2.0
+FREQUENZ_MIN_HZ = 45        # Wertebereich der API für grid_frequency_hz
+FREQUENZ_MAX_HZ = 55
 OBIS_SPANNUNG = {1: 32, 2: 52, 3: 72}  # Phase -> Index, in 0,001 V
 
 
@@ -86,6 +97,19 @@ def konfiguration_pruefen():
         socket.inet_pton(socket.AF_INET, INTERFACE_IP)
     except OSError:
         raise ValueError("INTERFACE_IP muss eine lokale IPv4-Adresse sein.") from None
+    frequenzquelle_pruefen()
+
+
+def frequenzquelle_pruefen():
+    if FREQUENCY_URL is None:
+        if FREQUENCY_KEY is not None:
+            raise ValueError("FREQUENCY_KEY ist gesetzt, FREQUENCY_URL aber nicht.")
+        return
+    adresse = urllib.parse.urlsplit(FREQUENCY_URL)
+    if adresse.scheme not in ("http", "https") or not adresse.netloc:
+        raise ValueError("FREQUENCY_URL muss eine http- oder https-Adresse sein.")
+    if not FREQUENCY_KEY or "" in FREQUENCY_KEY.split("."):
+        raise ValueError("FREQUENCY_KEY muss zu FREQUENCY_URL gesetzt sein, z. B. Fac.")
 
 
 def telegramm_dekodieren(daten):
@@ -173,13 +197,43 @@ def payload_erstellen(werte):
         "integration_version": VERSION,
     }
 
+    frequenz = None
     roh_frequenz = werte.get(OBIS_FREQUENZ)
-    if roh_frequenz is not None:
+    if roh_frequenz is not None and frequenz_plausibel(roh_frequenz / 1000.0):
         frequenz = roh_frequenz / 1000.0
-        if 45 <= frequenz <= 55:
-            payload["grid_frequency_hz"] = round(frequenz, 2)
+    elif FREQUENCY_URL is not None:
+        frequenz = externe_frequenz()
+    if frequenz is not None:
+        payload["grid_frequency_hz"] = round(frequenz, 2)
 
     return payload
+
+
+def frequenz_plausibel(frequenz):
+    return FREQUENZ_MIN_HZ <= frequenz <= FREQUENZ_MAX_HZ
+
+
+def externe_frequenz():
+    """Netzfrequenz aus FREQUENCY_URL; None, wenn nicht lesbar oder unplausibel."""
+    try:
+        with urllib.request.urlopen(
+            FREQUENCY_URL, timeout=FREQUENZ_TIMEOUT_S
+        ) as antwort:
+            wert = json.load(antwort)
+        for schluessel in FREQUENCY_KEY.split("."):
+            wert = wert[schluessel]
+        if isinstance(wert, bool):
+            raise ValueError(f"Wahrheitswert {wert!r} statt Frequenz")
+        frequenz = float(wert)
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as fehler:
+        log(f"Frequenz aus {FREQUENCY_URL} ({FREQUENCY_KEY}) nicht lesbar, "
+            f"Messung ohne Frequenz: {fehler!r}")
+        return None
+    if not frequenz_plausibel(frequenz):
+        log(f"Frequenz {frequenz} Hz aus {FREQUENCY_URL} unplausibel, "
+            "Messung ohne Frequenz.")
+        return None
+    return frequenz
 
 
 def senden(payload):

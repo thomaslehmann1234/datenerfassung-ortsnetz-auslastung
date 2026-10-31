@@ -33,14 +33,16 @@ SPANNUNGEN = messwert(32, 230123) + messwert(52, 229900) + messwert(72, 231200)
 VERSION = bytes.fromhex("90000000 02010052")
 
 
-class SmaTest(unittest.TestCase):
+class SmaBasis(unittest.TestCase):
     def setUp(self):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.multiple(
             sma, LATITUDE=52.5, LONGITUDE=13.4, METER_SERIAL=None,
-            INTERVAL_S=300, INTERFACE_IP="0.0.0.0"))
-        self.stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            INTERVAL_S=300, INTERFACE_IP="0.0.0.0",
+            FREQUENCY_URL=None, FREQUENCY_KEY=None))
+        self.ausgabe = io.StringIO()
+        self.stack.enter_context(contextlib.redirect_stdout(self.ausgabe))
         self.stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
         self.http = self.stack.enter_context(patch.object(
             sma.urllib.request, "urlopen", side_effect=AssertionError("Unerwarteter HTTP-Aufruf")))
@@ -63,6 +65,8 @@ class SmaTest(unittest.TestCase):
         self.http.return_value.__enter__.return_value = io.BytesIO(daten)
         self.http.return_value.__enter__.return_value.status = status
 
+
+class SmaTest(SmaBasis):
     def test_spannungen_frequenz_energie_und_payload(self):
         energie = messwert(1, 123456789, typ=8)
         serial, werte = sma.telegramm_dekodieren(telegramm(
@@ -190,6 +194,103 @@ class SmaTest(unittest.TestCase):
                     sma.main(["--once"])
                 self.assertEqual(error.exception.code, 2)
         self.netz.assert_not_called()
+
+
+FREQUENZ_URL = "http://192.0.2.17/api/v2/status"
+
+
+def http_antwort(daten, status=200):
+    koerper = io.BytesIO(daten)
+    koerper.status = status
+    antwort = MagicMock()
+    antwort.__enter__.return_value = koerper
+    return antwort
+
+
+class ExterneFrequenzTest(SmaBasis):
+    def frequenzquelle(self, daten, schluessel="Fac"):
+        sma.FREQUENCY_URL = FREQUENZ_URL
+        sma.FREQUENCY_KEY = schluessel
+        self.http.side_effect = None
+        self.http.return_value = http_antwort(daten)
+
+    def frequenz(self, werte):
+        return sma.payload_erstellen(werte).get("grid_frequency_hz")
+
+    def test_ergaenzt_fehlende_zaehlerfrequenz(self):
+        self.frequenzquelle(b'{"Fac": 49.946998596191406, "Uac": 231}')
+        payload = sma.payload_erstellen({32: 230000})
+        self.assertEqual(payload["grid_frequency_hz"], 49.95)
+        self.assertEqual(payload["l1_v"], 230.0)
+        self.http.assert_called_once_with(
+            FREQUENZ_URL, timeout=sma.FREQUENZ_TIMEOUT_S)
+
+    def test_verschachtelter_schluessel_und_text(self):
+        self.frequenzquelle(b'{"grid": {"f": "50.012"}}', "grid.f")
+        self.assertEqual(self.frequenz({32: 230000}), 50.01)
+
+    def test_gueltige_zaehlerfrequenz_hat_vorrang(self):
+        self.frequenzquelle(b'{"Fac": 49.9}')
+        self.assertEqual(self.frequenz({32: 230000, 14: 50010}), 50.01)
+        self.http.assert_not_called()
+
+    def test_unplausible_zaehlerfrequenz_nutzt_externe_quelle(self):
+        self.frequenzquelle(b'{"Fac": 49.9}')
+        self.assertEqual(self.frequenz({32: 230000, 14: 60000}), 49.9)
+
+    def test_fehler_der_quelle_liefert_messung_ohne_frequenz(self):
+        for daten in (b"kein json", b"[]", b"{}", b'{"Fac": null}',
+                      b'{"Fac": true}', b'{"Fac": "abc"}', b'{"Fac": "nan"}',
+                      b'{"Fac": 60}', b'{"Fac": 44.99}', b'{"Fac": [50]}'):
+            with self.subTest(daten=daten):
+                self.frequenzquelle(daten)
+                payload = sma.payload_erstellen({32: 230000})
+                self.assertNotIn("grid_frequency_hz", payload)
+                self.assertEqual(payload["l1_v"], 230.0)
+        self.assertIn("Messung ohne Frequenz", self.ausgabe.getvalue())
+
+    def test_netzwerkfehler_der_quelle_liefert_messung_ohne_frequenz(self):
+        sma.FREQUENCY_URL, sma.FREQUENCY_KEY = FREQUENZ_URL, "Fac"
+        abgelehnt = sma.urllib.error.HTTPError(
+            FREQUENZ_URL, 401, "unauthorized", {}, None)
+        for fehler in (sma.urllib.error.URLError("offline"),
+                       socket.timeout("timed out"), abgelehnt):
+            with self.subTest(fehler=fehler):
+                self.http.side_effect = fehler
+                self.assertIsNone(self.frequenz({32: 230000}))
+
+    def test_upload_enthaelt_externe_frequenz(self):
+        sma.FREQUENCY_URL, sma.FREQUENCY_KEY = FREQUENZ_URL, "Fac"
+        api = http_antwort(b'{"accepted":true}', status=202)
+        self.http.side_effect = lambda ziel, timeout: (
+            http_antwort(b'{"Fac": 49.97}') if ziel == FREQUENZ_URL else api)
+        self.assertEqual(self.einmallauf(["--once"], [telegramm(SPANNUNGEN)]), 0)
+        gesendet = json.loads(self.http.call_args[0][0].data)
+        self.assertEqual(gesendet["grid_frequency_hz"], 49.97)
+
+    def test_ungueltige_frequenzkonfiguration_verhindert_netzwerkzugriff(self):
+        for url, schluessel in (("ftp://192.0.2.17/status", "Fac"),
+                                ("file:///etc/passwd", "Fac"),
+                                ("http://", "Fac"), ("192.0.2.17/api", "Fac"),
+                                (FREQUENZ_URL, None), (FREQUENZ_URL, ""),
+                                (FREQUENZ_URL, "a..b"), (None, "Fac")):
+            konfiguration = {"FREQUENCY_URL": url, "FREQUENCY_KEY": schluessel}
+            with self.subTest(**konfiguration), \
+                    patch.multiple(sma, **konfiguration), \
+                    self.assertRaises(SystemExit) as error:
+                sma.main(["--once"])
+            self.assertEqual(error.exception.code, 2)
+        self.netz.assert_not_called()
+        self.http.assert_not_called()
+
+    def test_umgebungsvariablen_werden_gelesen(self):
+        modul = importlib.util.module_from_spec(SPEC)
+        umgebung = {"ORTSNETZ_FREQUENCY_URL": FREQUENZ_URL,
+                    "ORTSNETZ_FREQUENCY_KEY": "Fac"}
+        with patch.dict("os.environ", umgebung, clear=True):
+            SPEC.loader.exec_module(modul)
+        self.assertEqual(modul.FREQUENCY_URL, FREQUENZ_URL)
+        self.assertEqual(modul.FREQUENCY_KEY, "Fac")
 
 
 if __name__ == "__main__":

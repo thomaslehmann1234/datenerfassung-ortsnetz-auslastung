@@ -9,7 +9,7 @@ Der Sunny Home Manager 2.0 und das SMA Energy Meter senden ihre Messwerte als Sp
 - Python ab Version 3.8, nur Standardbibliothek
 - Koordinaten des Messorts, bestimmbar über [OpenStreetMap](https://www.openstreetmap.org/): Ort suchen, Rechtsklick, **„Abfrage starten“**
 
-Die Netzfrequenz liefert der Sunny Home Manager 2.0; fehlt sie im Telegramm, etwa beim SMA Energy Meter, wird sie weggelassen.
+Die Netzfrequenz liefert der Sunny Home Manager 2.0; fehlt sie im Telegramm, etwa beim SMA Energy Meter, wird sie weggelassen oder optional aus einer [externen Quelle](#netzfrequenz-aus-externer-quelle) gelesen.
 
 ## Empfang
 
@@ -60,9 +60,25 @@ LONGITUDE = None            # z. B. 13.404954
 INTERFACE_IP = "0.0.0.0"    # bei mehreren Interfaces: lokale IP im Zähler-Netz
 METER_SERIAL = None         # nur bei mehreren EMETER-Geräten nötig
 INTERVAL_S = 300
+FREQUENCY_URL = None        # optional: externe Frequenzquelle (JSON über http/https)
+FREQUENCY_KEY = None        # Schlüssel des Frequenzwerts in Hz, z. B. "Fac"
 ```
 
 Die Standardwerte der `konfig(...)`-Aufrufe im Script anpassen oder per Umgebungsvariable mit Präfix `ORTSNETZ_` überschreiben, z. B. `ORTSNETZ_LATITUDE=52.520008`; nichtleere Umgebungsvariablen haben Vorrang, die `.env`-Datei lädt nur Docker Compose. Alle Werte werden beim Start validiert.
+
+### Netzfrequenz aus externer Quelle
+
+Liefert der Zähler keine Netzfrequenz (SMA Energy Meter), kann das Script sie bei jeder Messung von einem anderen Gerät im lokalen Netz lesen, das sie als JSON über HTTP bereitstellt. Die Netzfrequenz ist im gesamten Verbundnetz gleich; das Gerät muss also nicht am selben Messpunkt hängen.
+
+```sh
+ORTSNETZ_FREQUENCY_URL=http://192.168.178.50/api/v2/status   # Beispiel sonnenBatterie
+ORTSNETZ_FREQUENCY_KEY=Fac
+```
+
+- `FREQUENCY_KEY` ist der Schlüssel des Werts in Hz; verschachtelte Schlüssel werden mit Punkt getrennt, z. B. `grid.frequency`. Zahl und Zahl als Text werden akzeptiert.
+- Eine gültige Frequenz aus dem Zähler-Telegramm hat Vorrang; die externe Quelle wird dann nicht abgefragt.
+- Ist die Quelle nicht erreichbar, der Schlüssel nicht vorhanden oder der Wert außerhalb von 45 bis 55 Hz, wird die Messung ohne Frequenz gesendet und der Grund im Log vermerkt.
+- Nur Quellen ohne Anmeldung werden unterstützt. Ob ein Gerät die Frequenz liefert, zeigt `--dry-run`.
 
 ## Docker
 
