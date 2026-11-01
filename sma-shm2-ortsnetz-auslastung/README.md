@@ -2,6 +2,8 @@
 
 Der Sunny Home Manager 2.0 und das SMA Energy Meter senden ihre Messwerte als Speedwire-Multicast (SMA-EMETER-Protokoll) in das lokale Netzwerk. Dieses Python-Script empfängt die Telegramme lokal ohne Sunny-Portal-Zugang, dekodiert die Phasenspannungen L1, L2, L3 sowie eine vorhandene Netzfrequenz und sendet die erste gültige Messung nach dem Start und danach alle fünf Minuten an die Ortsnetz-Auslastung-API.
 
+Der Zähler sendet etwa jede Sekunde ein Telegramm. Im Dauerbetrieb gehen die Werte zwischen zwei Uploads nicht verloren: Zusätzlich zum Momentanwert werden Minimum, Maximum und Mittelwert aller Telegramme seit dem vorigen Upload übertragen (`l1_v_min`, `l1_v_max`, `l1_v_avg` usw., bei einer Frequenz im Telegramm auch `grid_frequency_hz_min` bis `_avg`). So kommen auch kurze Spannungsspitzen und -einbrüche an. Es sind Effektivwerte des Zählers; Transienten im Bereich von Mikro- bis Millisekunden erfasst er nicht. Der erste Upload nach dem Start sowie `--once` und `--dry-run` senden nur den Momentanwert.
+
 ## Voraussetzungen
 
 - SMA Sunny Home Manager 2.0 oder SMA Energy Meter (EMETER-20)

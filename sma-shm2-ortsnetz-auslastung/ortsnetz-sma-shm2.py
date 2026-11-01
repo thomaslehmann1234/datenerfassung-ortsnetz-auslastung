@@ -6,6 +6,8 @@ Empfängt die Speedwire-Multicast-Telegramme (SMA-EMETER-Protokoll) direkt aus
 dem lokalen Netzwerk, dekodiert Phasenspannungen und Netzfrequenz und sendet
 die Messung sofort nach dem Start und danach alle fünf Minuten an
 https://www.ortsnetz-auslastung.de/v1/measurements
+Im Dauerbetrieb kommen Minimum, Maximum und Mittelwert aller Telegramme seit
+dem vorigen Upload hinzu, damit kurze Spannungsspitzen nicht verloren gehen.
 
 Nur Python-Standardbibliothek, ab Python 3.8. Läuft auf jedem Linux-Rechner
 (z. B. Raspberry Pi, NAS, Home-Server) im selben Layer-2-Netz wie der Zähler.
@@ -75,6 +77,7 @@ EMETER_PROTOCOL_ID = 0x6069
 TELEGRAM_TIMEOUT_S = 15     # maximale Wartezeit auf ein gültiges Telegramm
 FREQUENZ_TIMEOUT_S = 5      # maximale Wartezeit auf die externe Frequenzquelle
 FREQUENZ_MAX_BYTES = 65536  # größere Antworten der Quelle werden verworfen
+MAX_ZAEHLER = 16            # Seriennummern je Intervall in der Statistik
 
 # OBIS-Messwert-Indizes im EMETER-Telegramm (Momentanwerte, Typ 4)
 OBIS_FREQUENZ = 14          # in 0,001 Hz, nur Sunny Home Manager 2.0
@@ -200,11 +203,8 @@ def payload_erstellen(werte):
         "integration_version": VERSION,
     }
 
-    frequenz = None
-    roh_frequenz = werte.get(OBIS_FREQUENZ)
-    if roh_frequenz is not None and frequenz_plausibel(roh_frequenz / 1000.0):
-        frequenz = roh_frequenz / 1000.0
-    elif FREQUENCY_URL is not None:
+    frequenz = zaehler_frequenz(werte)
+    if frequenz is None and FREQUENCY_URL is not None:
         frequenz = externe_frequenz()
     if frequenz is not None:
         payload["grid_frequency_hz"] = round(frequenz, 2)
@@ -212,8 +212,79 @@ def payload_erstellen(werte):
     return payload
 
 
+def zaehler_frequenz(werte):
+    """Netzfrequenz aus dem Telegramm in Hz; None, wenn fehlend oder unplausibel."""
+    roh = werte.get(OBIS_FREQUENZ)
+    if roh is None or not frequenz_plausibel(roh / 1000.0):
+        return None
+    return roh / 1000.0
+
+
 def frequenz_plausibel(frequenz):
     return FREQUENZ_MIN_HZ <= frequenz <= FREQUENZ_MAX_HZ
+
+
+def statistik_erfassen(statistik, werte):
+    """Nimmt die plausiblen Werte eines Telegramms in die Statistik auf.
+
+    statistik hat die Form {Feld: [Minimum, Maximum, Summe, Anzahl]}. Die Werte
+    werden vorab auf die gesendeten Stellen gerundet; so kann der gerundete
+    Mittelwert nicht außerhalb von Minimum und Maximum landen.
+    """
+    messwerte = {f"l{phase}_v": spannung(werte, phase) for phase in OBIS_SPANNUNG}
+    frequenz = zaehler_frequenz(werte)
+    messwerte["grid_frequency_hz"] = None if frequenz is None else round(frequenz, 2)
+    for feld, wert in messwerte.items():
+        if wert is None or wert == -1:
+            continue
+        eintrag = statistik.get(feld)
+        if eintrag is None:
+            statistik[feld] = [wert, wert, wert, 1]
+        else:
+            eintrag[0] = min(eintrag[0], wert)
+            eintrag[1] = max(eintrag[1], wert)
+            eintrag[2] += wert
+            eintrag[3] += 1
+
+
+def statistik_felder(statistik):
+    """Minimum, Maximum und Mittelwert über das Sendeintervall als API-Felder."""
+    felder = {}
+    for feld, (minimum, maximum, summe, anzahl) in statistik.items():
+        stellen = 2 if feld == "grid_frequency_hz" else 1
+        felder[f"{feld}_min"] = round(minimum, stellen)
+        felder[f"{feld}_max"] = round(maximum, stellen)
+        felder[f"{feld}_avg"] = round(summe / anzahl, stellen)
+    return felder
+
+
+def intervall_erfassen(sock, ende, statistiken):
+    """Sammelt bis ende (time.monotonic) die Telegramme je Zähler in statistiken."""
+    while True:
+        rest = ende - time.monotonic()
+        if rest <= 0:
+            return
+        sock.settimeout(rest)
+        try:
+            daten, _ = sock.recvfrom(65535)
+        except socket.timeout:
+            continue
+        ergebnis = telegramm_dekodieren(daten)
+        if ergebnis is None:
+            continue
+        seriennummer, werte = ergebnis
+        if METER_SERIAL is not None and seriennummer != METER_SERIAL:
+            continue
+        # Begrenzt den Speicher, falls im Netz viele Seriennummern auftauchen.
+        if seriennummer in statistiken or len(statistiken) < MAX_ZAEHLER:
+            statistik_erfassen(statistiken.setdefault(seriennummer, {}), werte)
+
+
+def spannweite_anzeigen(payload):
+    """Minimum/Maximum der Spannungen fürs Log; leer ohne Statistik."""
+    teile = [f"L{phase}={payload[f'l{phase}_v_min']}/{payload[f'l{phase}_v_max']}"
+             for phase in OBIS_SPANNUNG if f"l{phase}_v_min" in payload]
+    return f", Min/Max {' '.join(teile)} V" if teile else ""
 
 
 def frequenzquelle_anzeigen():
@@ -266,7 +337,8 @@ def senden(payload):
             if antwort.status != 202 or not isinstance(daten, dict) or daten.get("accepted") is not True:
                 raise ValueError("API hat die Annahme der Messung nicht bestätigt.")
             log(f"OK: L1={payload['l1_v']} L2={payload['l2_v']} L3={payload['l3_v']} V, "
-                f"f={payload.get('grid_frequency_hz', '-')} Hz")
+                f"f={payload.get('grid_frequency_hz', '-')} Hz"
+                f"{spannweite_anzeigen(payload)}")
             return True
     except urllib.error.HTTPError as fehler:
         log(f"HTTP {fehler.code}: {fehler.read().decode(errors='replace')}")
@@ -275,7 +347,7 @@ def senden(payload):
     return False
 
 
-def einmal(sock, dry_run=False):
+def einmal(sock, dry_run=False, statistiken=None):
     ergebnis = messung_empfangen(sock)
     if ergebnis is None:
         log(f"Kein gültiges EMETER-Telegramm innerhalb von {TELEGRAM_TIMEOUT_S} s empfangen – "
@@ -283,6 +355,13 @@ def einmal(sock, dry_run=False):
         return False
     seriennummer, werte = ergebnis
     payload = payload_erstellen(werte)
+    # Der gesendete Momentanwert zählt mit; er liegt so zwischen Minimum und Maximum.
+    if statistiken and (statistik := statistiken.get(seriennummer)):
+        statistik_erfassen(statistik, werte)
+        if zaehler_frequenz(werte) is None:
+            # Frequenz fehlt oder kommt aus FREQUENCY_URL; Zählerwerte passen nicht.
+            statistik.pop("grid_frequency_hz", None)
+        payload.update(statistik_felder(statistik))
     if dry_run:
         log(f"Zähler-Seriennummer: {seriennummer}")
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -305,19 +384,14 @@ def main(argv=None):
         with multicast_socket() as sock:
             if args.dry_run or args.once:
                 return 0 if einmal(sock, dry_run=args.dry_run) else 1
+            statistiken = {}
             while True:
                 start = time.monotonic()
-                einmal(sock)
-                # Laufend leeren: keine alten Telegramme beim nächsten Upload.
-                while True:
-                    rest = INTERVAL_S - (time.monotonic() - start)
-                    if rest <= 0:
-                        break
-                    sock.settimeout(rest)
-                    try:
-                        sock.recvfrom(65535)
-                    except socket.timeout:
-                        pass
+                einmal(sock, statistiken=statistiken)
+                # Laufend leeren: keine alten Telegramme beim nächsten Upload, aber
+                # Minimum, Maximum und Mittelwert des Intervalls für diesen sammeln.
+                statistiken = {}
+                intervall_erfassen(sock, start + INTERVAL_S, statistiken)
     except OSError as fehler:
         log(f"Netzwerkfehler: {fehler}")
         return 1
