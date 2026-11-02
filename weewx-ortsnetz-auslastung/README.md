@@ -134,6 +134,14 @@ The configuration section in `weewx.conf` looks like this:
 * `pv_forecast_kwh`: Name of the observation type that provides a 
   forecast of the daily earnings. Optional. Default is not provided.
 
+## Privacy
+
+While grid voltages and grid frequency are not personally linked to you,
+values like grid power, phase currents, and SOC are. You have to trust
+the project maintainers that they do not misuse or sell this data. If
+you do not want to send the additional values for privacy reasons,
+set them to `none` like in `grid_power_w = none`. They are omitted then.
+
 ## Tests
 
 With WeeWX installed, run from the repository root:
