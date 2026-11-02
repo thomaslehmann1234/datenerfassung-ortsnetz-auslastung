@@ -2,3 +2,4 @@
 * initial version
 0.2
 * additional fields
+* plant nominal power and battery capacity can be specified in weewx.conf

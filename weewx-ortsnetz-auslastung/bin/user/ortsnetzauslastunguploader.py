@@ -187,9 +187,19 @@ class RESTThread(weewx.restx.RESTThread):
         self.l2_name = l2_v
         self.l3_name = l3_v
         self.freq_name = grid_frequency_hz
-        self.kwp_name = plant_capacity_kwp
+        try:
+            # if the value is provided in the configuration
+            self.plant_capacity = float(plant_capacity_kwp)
+        except ValueError:
+            # if the value is to be read from the record
+            self.plant_capacity = plant_capacity_kwp
         self.forecast_name = pv_forecast_kwh
-        self.battery_capacity_name = battery_capacity
+        try:
+            # if the value is provided in the configuration
+            self.battery_capacity = float(battery_capacity)
+        except ValueError:
+            # if the value is to be read from the record
+            self.battery_capacity = battery_capacity
         self.fields = [
             ('battery_soc_percent',battery_soc_percent,'percent'),
             ('grid_power_w',grid_power_w,'watt'),
@@ -249,13 +259,27 @@ class RESTThread(weewx.restx.RESTThread):
                 if freq is not None:
                     body['grid_frequency_hz'] = round(freq,3)
             # installed PV power (optional)
-            if self.kwp_name and self.kwp_name.lower()!='none' and self.kwp_name in record:
-                kwp = weewx.units.convert(weewx.units.as_value_tuple(record,self.kwp_name),'kilowatt')[0]
+            if self.plant_capacity and self.plant_capacity.lower()!='none':
+                if isinstance(self.plant_capacity,float):
+                    # if the value is provided in the configuration
+                    kwp = self.plant_capacity
+                elif self.plant_capacity in record:
+                    # if the value is to be read from the record
+                    kwp = weewx.units.convert(weewx.units.as_value_tuple(record,self.plant_capacity),'kilowatt')[0]
+                else:
+                    kwp = None
                 if kwp is not None:
                     body['plant_capacity_kwp'] = round(kwp,1)
             # installed battery capacity (optional)
-            if self.battery_capacity_name and self.battery_capacity_name.lower()!='none' and self.battery_capacity_name in record:
-                bat = weewx.units.convert(weewx.units.as_value_tuple(record,self.battery_capacity_name),'kilowatt_hour')[0]
+            if self.battery_capacity and self.battery_capacity.lower()!='none':
+                if isinstance(self.battery_capacity,float):
+                    # if the value is provided in the configuration
+                    bat = self.battery_capacity
+                elif self.battery_capacity in record:
+                    # if the value is to be read from the record
+                    bat = weewx.units.convert(weewx.units.as_value_tuple(record,self.battery_capacity),'kilowatt_hour')[0]
+                else:
+                    bat = None
                 if bat is not None:
                     body['battery_capacity'] = round(bat,1)
             # forecast (optional)

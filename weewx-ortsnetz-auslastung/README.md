@@ -114,6 +114,12 @@ The configuration section in `weewx.conf` looks like this:
   measures the grid voltages.
 * `integration_version`: Normally you do **not** need this key. The 
   default is enough. Set it only, if you really know what you do.
+* `plant_capacity_kwp`: Set it to the name of the observation type that
+  provides the nominal power of the PV system or set it to the value
+  of the nominal power of the PV system in kWp (kilowatt peak).
+* `battery_capacity`: Set it ot the name of the observation type that
+  provides the nominal capacity of the battery or set it to the value
+  of the nominal capacity of the battery in kWh (kilowatt-hours).
 * `l1_v`, `l2_v`, `l3_v`: Names of the observation types of the grid
   voltages. Mandatory. If you have a one phase system, set `l2_v` and 
   `l3_v` to `none`.
