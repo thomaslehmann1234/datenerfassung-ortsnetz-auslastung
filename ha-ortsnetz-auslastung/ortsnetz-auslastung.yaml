@@ -1,0 +1,150 @@
+alias: "Projekt: ortsnetz-auslastung.de"
+description: |
+  Sendet Daten an Projekt ortsnetz-auslastung.de über eine einfache
+  Homeassistant Automatisierung. Die eigenen Sensoren werden nur in
+  Schritt 1 "Konfiguration" eingetragen. Funktioniert mit 1, 2 oder 3 Phasen.
+
+triggers:
+  # Zeit-gesteuerter Auslöser, standard: alle 5 Minuten
+  - minutes: /5
+    trigger: time_pattern
+
+actions:
+  - alias: Random delay (5–60 seconds)
+    delay:
+      seconds: '{{ range(5, 60) | random }}'
+
+  # 1. KONFIGURATION – die einzige Stelle, die angepasst werden muss.
+  #    Im visuellen Editor ist das der erste Schritt "Konfiguration".
+  #    - Nicht vorhandene oder nicht gemessene Phase: "" eintragen,
+  #      sie wird dann als -1 gesendet (z.B. einphasige Messung oder
+  #      Mikrowechselrichter nur auf zwei Phasen).
+  #    - Ohne Frequenzsensor: "" eintragen, das Feld wird dann weggelassen.
+  - alias: "Konfiguration"
+    variables:
+      l1_voltage: sensor.ksem_l1_voltage
+      l2_voltage: sensor.ksem_l2_voltage
+      l3_voltage: sensor.ksem_l3_voltage
+      frequency: sensor.ksem_netzfrequenz
+
+      # Zone, aus der die Orts-Koordinaten gelesen werden
+      location_zone: zone.home
+
+      # Werte, die älter sind, gelten als veraltet und werden nicht
+      # gesendet (z.B. Mikrowechselrichter, der nachts den letzten Wert behält).
+      # 0 = keine Altersprüfung (falls ein Sensor unveränderte Werte nicht
+      # neu meldet und sonst fälschlich als veraltet gilt)
+      max_age_minutes: 10
+
+      # Optionale Zusatzfelder, siehe API.md. Zum Aktivieren "#" entfernen.
+      optional_fields:
+        # plant_capacity_kwp: 8.0
+        # pv_forecast_kwh: "{{ states('sensor.solar_pv_forecast_today') }}"
+        # smartmeter_model: "Kostal Smart Energy Meter G1"
+
+  # 2. Aktualisiert die eingetragenen Sensoren, falls diese "gepolled" werden
+  #    (z.B. Modbus); existiert ein eigener Zeitplan zur Aktualisierung,
+  #    kann die Aktion deaktiviert werden. Leere Einträge werden übersprungen.
+  - alias: "Sensoren aktualisieren"
+    action: homeassistant.update_entity
+    continue_on_error: true
+    data:
+      entity_id: >-
+        {{ [l1_voltage, l2_voltage, l3_voltage, frequency] | select | list }}
+
+  # 3. Liest die Messwerte. Ein Wert wird nur übernommen, wenn der Sensor
+  #    existiert, einen Zahlenwert im erlaubten Bereich liefert und nicht
+  #    älter als max_age_minutes ist. Sonst: Phase = -1, Frequenz = weggelassen.
+  - alias: "Messwerte lesen"
+    variables:
+      phases: >-
+        {%- set ns = namespace(out={}) -%}
+        {%- for key, entity in [('l1_v', l1_voltage), ('l2_v', l2_voltage), ('l3_v', l3_voltage)] -%}
+          {%- set st = expand(entity) | first if entity else none -%}
+          {%- set ts = (st.last_reported | default(st.last_updated)) if st else none -%}
+          {%- set fresh = ts is not none and (max_age_minutes | float(10) <= 0 or (now() - ts).total_seconds() <= max_age_minutes | float(10) * 60) -%}
+          {%- set v = st.state | float(-1) if fresh else -1 -%}
+          {%- set ns.out = dict(ns.out, **{key: v if 0 < v <= 500 else -1}) -%}
+        {%- endfor -%}
+        {{ ns.out }}
+      grid_frequency: >-
+        {%- set st = expand(frequency) | first if frequency else none -%}
+        {%- set ts = (st.last_reported | default(st.last_updated)) if st else none -%}
+        {%- set fresh = ts is not none and (max_age_minutes | float(10) <= 0 or (now() - ts).total_seconds() <= max_age_minutes | float(10) * 60) -%}
+        {%- set v = st.state | float(-1) if fresh else -1 -%}
+        {{ v if 45 <= v <= 55 else none }}
+
+  # 4. Sendet nur, wenn mindestens eine Phase einen gültigen Wert hat.
+  #    Sonst Warnung ins System Log und Abbruch, statt einen Request zu
+  #    senden, den die API mit 422 ablehnen würde.
+  - alias: "Mindestens eine gültige Phase?"
+    if:
+      - condition: template
+        value_template: "{{ phases.values() | select('>', 0) | list | count == 0 }}"
+    then:
+      - action: system_log.write
+        metadata: {}
+        data:
+          level: warning
+          message: >-
+            ortsnetz-auslastung.de: nicht gesendet, keine gültige Phase:
+            {% for e in [l1_voltage, l2_voltage, l3_voltage] | select %}{{ e }}={{ states(e) }}{{ ', ' if not loop.last }}{% endfor %}
+      - stop: "Keine gültige Phase"
+
+  # 5. Baut aus den Messwerten den API Payload für ortsnetz-auslastung.de
+  #    zusammen und parkt diesen in der Variable "json_payload"
+  - alias: "Payload bauen"
+    variables:
+      json_payload: >-
+        {%- set p = dict(observed_at=now().isoformat(),
+                         latitude=state_attr(location_zone, 'latitude'),
+                         longitude=state_attr(location_zone, 'longitude'),
+                         **phases) -%}
+        {%- if grid_frequency is number -%}
+          {%- set p = dict(p, grid_frequency_hz=grid_frequency) -%}
+        {%- endif -%}
+        {{ dict(p, **(optional_fields or {})) }}
+
+  # 6. Schreibt Payload ins Log, fürs Debugging (nicht aktiviert)
+  - action: system_log.write
+    enabled: false
+    data:
+      level: debug
+      message: "Daten für ortsnetz-auslastung.de: {{ json_payload | to_json }}"
+
+  # 7. Sendet Payload an "rest_command" Integration
+  - action: rest_command.ortsnetz_auslastung_de
+    data:
+      payload: |
+        {{ json_payload | to_json }}
+    enabled: true
+    # Response wird in Variable "post_response" geparkt
+    response_variable: post_response
+
+  # 8. Triggert Event "ortsnetz_api_response" zur Rückspielung der Response-
+  #    Daten als Sensoren
+  - event: ortsnetz_api_response
+    event_data:
+      http_status: '{{ post_response.status | default(0) }}'
+      response: '{{ post_response.content | default({}, true) | to_json }}'
+
+  # 9. Status des Response auswerten und Fehlermeldung, falls etwas nicht stimmt
+  - if:
+      - condition: template
+        value_template: >-
+          {{ post_response['status'] >= 200 and post_response['status'] < 300 }}
+    then:
+      # Falls OK: Log in System Log
+      - action: system_log.write
+        metadata: {}
+        data:
+          level: debug
+          message: Update an ortsnetz-auslastung.de OK
+    else:
+      # im Fehlerfall: persistente Nachricht schreiben
+      - action: persistent_notification.create
+        metadata: {}
+        data:
+          message: >-
+            Fehler bei Aktualisierung ortsnetz-auslastung.de: {{ post_response | to_json }}
+mode: single

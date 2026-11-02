@@ -1,0 +1,23 @@
+[Unit]
+Description=Ortsnetz-Auslastung smartWB (eine Messung senden)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Maximale Laufzeit je Messung
+TimeoutStartSec=60s
+EnvironmentFile=/etc/ortsnetz-smartwb.env
+ExecStart=/usr/bin/python3 /opt/ortsnetz-smartwb/ortsnetz_smartwb.py
+
+# Läuft als unprivilegierter, temporärer Benutzer, nicht als root.
+# Script und Ordner gehören root und sind für diesen Benutzer nicht beschreibbar.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6

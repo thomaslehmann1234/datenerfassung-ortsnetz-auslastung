@@ -166,10 +166,12 @@ async function uploadMeasurement() {
 	}
 
 	const [l1, l2, l3, frequency] = parseMeasurements(data);
-	const phases = [l1, l2, l3].map((value) => (value !== null && value > 0 ? value : -1));
+	const phases = [l1, l2, l3].map((value) => (
+		Number.isFinite(value) && value >= 150 && value <= 300 ? value : -1
+	));
 
 	// Do not report missing or implausible measurements.
-	if (phases.every((value) => value < 150 || value > 300)) {
+	if (phases.every((value) => value === -1)) {
 		console.warn(`Ortsnetz-Auslastung: ungültige Spannung (L1=${l1}, L2=${l2}, L3=${l3}); Upload übersprungen`);
 		return;
 	}
@@ -227,6 +229,12 @@ async function uploadMeasurement() {
 }
 
 async function main() {
+	// Node timers above this limit wrap to 1 ms; reject them as well.
+	if (!Number.isInteger(CONFIG.intervalMs) || CONFIG.intervalMs < 300_000
+		|| CONFIG.intervalMs > 2_147_483_647) {
+		console.error('Ortsnetz-Auslastung: ORTSNETZ_INTERVAL_S muss mindestens 300 sein und darf 2147483.647 nicht überschreiten');
+		process.exit(1);
+	}
 	if (!CONFIG.deviceIp) {
 		console.error('Ortsnetz-Auslastung: ORTSNETZ_DEVICE_IP muss gesetzt sein');
 		process.exit(1);
@@ -243,7 +251,11 @@ async function main() {
 	}
 }
 
-main().catch((error) => {
-	console.error(`Ortsnetz-Auslastung: unerwarteter Fehler: ${error}`);
-	process.exit(1);
-});
+if (require.main === module) {
+	main().catch((error) => {
+		console.error(`Ortsnetz-Auslastung: unerwarteter Fehler: ${error}`);
+		process.exit(1);
+	});
+}
+
+module.exports = { main };

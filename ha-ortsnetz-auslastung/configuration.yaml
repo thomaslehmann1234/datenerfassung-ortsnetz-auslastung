@@ -1,0 +1,56 @@
+# Dieser Abschnitt muss in die zentrale Homeassistant Config integriert werden
+# Homeassistant erlaubt aus Sicherheitsgründen keine HTTP Calls an nicht definierte
+# Schnittstellen / Endpunkte
+rest_command:
+  ortsnetz_auslastung_de:
+    url: "https://www.ortsnetz-auslastung.de/v1/measurements"
+    method: "POST"
+    content_type: "application/json"
+    payload: '{{ payload }}'
+
+# Bei erfolgreichem Request gibt es auch eine Response. Diese Werte können t:als
+# Sensoren in Home Assistant exposed werden. Falls das nicht passieren soll,
+# können die folgenden Zeilen einfach weggelassen werden
+template:
+  - trigger:
+      - platform: event
+        event_type: ortsnetz_api_response
+
+    variables:
+      http_ok: "{{ trigger.event.data.http_status | int(0) == 202 }}"
+      api: "{{ trigger.event.data.response | from_json({}) }}"
+
+    sensor:
+      - name: "Ortsnetz HTTP Status"
+        unique_id: ortsnetz_http_status
+        state: "{{ trigger.event.data.http_status | int(0) }}"
+
+      - name: "Ortsnetz L1 Status"
+        unique_id: ortsnetz_l1_status
+        state: >
+          {{ api.get('status', {}).get('l1', 'unknown')
+             if http_ok else this.state }}
+
+      - name: "Ortsnetz L2 Status"
+        unique_id: ortsnetz_l2_status
+        state: >
+          {{ api.get('status', {}).get('l2', 'unknown')
+             if http_ok else this.state }}
+
+      - name: "Ortsnetz L3 Status"
+        unique_id: ortsnetz_l3_status
+        state: >
+          {{ api.get('status', {}).get('l3', 'unknown')
+             if http_ok else this.state }}
+
+      - name: "Ortsnetz Gesamtstatus"
+        unique_id: ortsnetz_overall_status
+        state: >
+          {{ api.get('status', {}).get('overall', 'unknown')
+             if http_ok else this.state }}
+
+      - name: "Ortsnetz Speicherempfehlung"
+        unique_id: ortsnetz_storage_recommendation
+        state: >
+          {{ api.get('storage_recommendation', 'unknown')
+             if http_ok else this.state }}

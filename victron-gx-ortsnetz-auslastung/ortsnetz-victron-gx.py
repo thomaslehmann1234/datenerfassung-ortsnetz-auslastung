@@ -27,14 +27,16 @@ import dbus
 # ---------------- Konfiguration ----------------
 LATITUDE = 52.520008
 LONGITUDE = 13.404954
-PLANT_KWP = 10.0            # optional, z. B. 9.8
+# Optional: Nur die tatsächliche installierte PV-Leistung in kWp eintragen.
+# Bei unbekannter Anlagengröße oder ohne PV-Anlage None lassen; der Wert wird dann nicht übertragen.
+PLANT_KWP = None
 PV_FORECAST_KWH = None      # optional, z. B. 24.5
 SMARTMETER_MODEL = "Victron GX"
 INTERVAL_S = 300            # alle 5 Minuten
 # -----------------------------------------------
 
 API_URL = "https://www.ortsnetz-auslastung.de/v1/measurements"
-VERSION = "venus-dbus-0.1.1"
+VERSION = "venus-dbus-0.1.2"
 
 bus = dbus.SystemBus()
 
@@ -46,7 +48,10 @@ def log(msg):
 def get(service, path):
     """D-Bus GetValue; liefert float oder None (ungültig = leeres Array)."""
     try:
-        v = bus.get_object(service, path).GetValue()
+        v = bus.get_object(service, path).GetValue(
+            dbus_interface="com.victronenergy.BusItem",
+            timeout=3,
+        )
         if isinstance(v, dbus.Array) or v is None:
             return None
         return float(v)

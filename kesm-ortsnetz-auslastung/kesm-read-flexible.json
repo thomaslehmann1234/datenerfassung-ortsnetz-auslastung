@@ -1,0 +1,337 @@
+[
+    {
+        "id": "tab_flow2_ksem_flex",
+        "type": "tab",
+        "label": "Flow 2",
+        "disabled": false,
+        "info": "KSEM: ein Flex-Getter-Block (HR 26 qty 118) → 4 Werte decodieren → ein API-POST. Gleiche Payload wie Flow 1, ohne Join/4×Read."
+    },
+    {
+        "id": "f2_cmt",
+        "type": "comment",
+        "z": "tab_flow2_ksem_flex",
+        "name": "Flex-Getter Block → API",
+        "info": "Liest Hz@26, L1@62, L2@102, L3@142 in einem FC3. Decodiert uint32 BE/1000. Meldet atomar an Ortsnetz-API. Flow 1 bei Parallelbetrieb deaktivieren.",
+        "x": 280,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "f2_inj",
+        "type": "inject",
+        "z": "tab_flow2_ksem_flex",
+        "name": "alle 300s",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "v": "ksem-poll",
+                "vt": "str"
+            }
+        ],
+        "repeat": "300",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 2,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 140,
+        "wires": [
+            [
+                "f2_prep"
+            ]
+        ]
+    },
+    {
+        "id": "f2_inj_once",
+        "type": "inject",
+        "z": "tab_flow2_ksem_flex",
+        "name": "jetzt einmal",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "5",
+        "topic": "ksem-poll",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 200,
+        "wires": [
+            [
+                "f2_prep"
+            ]
+        ]
+    },
+    {
+        "id": "f2_prep",
+        "type": "function",
+        "z": "tab_flow2_ksem_flex",
+        "name": "FC3 Block 26/118",
+        "func": "// One Modbus FC3 covering Hz/L1/L2/L3 (adr 26..143 inclusive → 118 regs)\nmsg.payload = {\n  fc: 3,\n  unitid: 1,\n  address: 26,\n  quantity: 118\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 160,
+        "wires": [
+            [
+                "f2_flex"
+            ]
+        ]
+    },
+    {
+        "id": "f2_flex",
+        "type": "modbus-flex-getter",
+        "z": "tab_flow2_ksem_flex",
+        "name": "KSEM Flex-Getter",
+        "showStatusActivities": true,
+        "showErrors": true,
+        "showWarnings": true,
+        "logIOActivities": false,
+        "server": "882c2498be36e6d4",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "keepMsgProperties": false,
+        "delayOnStart": false,
+        "enableDeformedMessages": false,
+        "startDelayTime": "",
+        "x": 580,
+        "y": 160,
+        "wires": [
+            [
+                "f2_dbg_raw"
+            ],
+            [
+                "f2_decode"
+            ]
+        ]
+    },
+    {
+        "id": "f2_dbg_raw",
+        "type": "debug",
+        "z": "tab_flow2_ksem_flex",
+        "name": "raw values",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 800,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "f2_decode",
+        "type": "function",
+        "z": "tab_flow2_ksem_flex",
+        "name": "Decode L1/L2/L3/Hz",
+        "func": "// Single Holding-Register block starting at adr 26 (same mapping as Flow 1).\n// Register map: Hz@26, L1@62, L2@102, L3@142 — each uint32 BE / 1000 over 2 regs.\nconst src = msg.payload;\nlet regs = null;\nif (Array.isArray(src)) {\n  regs = src;\n} else if (src && Array.isArray(src.data)) {\n  regs = src.data;\n} else if (src && src.data && Buffer.isBuffer(src.data)) {\n  const buf = src.data;\n  regs = [];\n  for (let i = 0; i + 1 < buf.length; i += 2) {\n    regs.push(buf.readUInt16BE(i));\n  }\n} else if (Buffer.isBuffer(src)) {\n  regs = [];\n  for (let i = 0; i + 1 < src.length; i += 2) {\n    regs.push(src.readUInt16BE(i));\n  }\n}\n\nif (!regs || regs.length < 118) {\n  node.status({ fill: \"red\", shape: \"ring\", text: \"block incomplete (\" + (regs ? regs.length : 0) + \" regs)\" });\n  node.error(\"Expected >=118 holding registers from adr 26\", msg);\n  return null;\n}\n\nfunction u32beDiv1000(regIndex) {\n  const hi = regs[regIndex] & 0xffff;\n  const lo = regs[regIndex + 1] & 0xffff;\n  return ((hi * 65536) + lo) / 1000;\n}\n\n// Offsets relative to start address 26\nconst values = {\n  Hz: u32beDiv1000(26 - 26),\n  L1: u32beDiv1000(62 - 26),\n  L2: u32beDiv1000(102 - 26),\n  L3: u32beDiv1000(142 - 26)\n};\n\nnode.status({\n  fill: \"green\",\n  shape: \"dot\",\n  text: \"L1=\" + values.L1.toFixed(1) + \" L2=\" + values.L2.toFixed(1) + \" L3=\" + values.L3.toFixed(1) + \" Hz=\" + values.Hz.toFixed(2)\n});\n\nmsg.payload = values;\nmsg.ksem = values;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 180,
+        "wires": [
+            [
+                "f2_api_build",
+                "f2_dbg_vals"
+            ]
+        ]
+    },
+    {
+        "id": "f2_dbg_vals",
+        "type": "debug",
+        "z": "tab_flow2_ksem_flex",
+        "name": "decoded block",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1050,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "f2_api_build",
+        "type": "function",
+        "z": "tab_flow2_ksem_flex",
+        "name": "Payload für API bauen",
+        "func": "msg.topic = \"Payload-fuer-API\";\n// Values already decoded in one object from single Modbus block\nconst voltL1 = msg.payload.L1;\nconst voltL2 = msg.payload.L2;\nconst voltL3 = msg.payload.L3;\nconst frequenz = msg.payload.Hz;\n\nconst LATITUDE = 52.999999;\nconst LONGITUDE = 8.999999;\n\nmsg.payload = {\n  observed_at: new Date().toISOString(),\n  latitude: LATITUDE,\n  longitude: LONGITUDE,\n  l1_v: Math.round(voltL1 * 10) / 10,\n  l2_v: Math.round(voltL2 * 10) / 10,\n  l3_v: Math.round(voltL3 * 10) / 10,\n  grid_frequency_hz: Math.round(frequenz * 100) / 100,\n  smartmeter_model: \"Kostal KSEM\",\n  integration_version: \"node-red-ksem-2.0.0-flex\"\n};\n\nmsg.headers = { \"Content-Type\": \"application/json\" };\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1060,
+        "y": 160,
+        "wires": [
+            [
+                "f2_http",
+                "f2_dbg_api"
+            ]
+        ]
+    },
+    {
+        "id": "f2_dbg_api",
+        "type": "debug",
+        "z": "tab_flow2_ksem_flex",
+        "name": "API payload",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1280,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "f2_http",
+        "type": "http request",
+        "z": "tab_flow2_ksem_flex",
+        "name": "API HTTP POST",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "https://www.ortsnetz-auslastung.de/v1/measurements",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 1280,
+        "y": 140,
+        "wires": [
+            [
+                "f2_resp",
+                "f2_dbg_http"
+            ]
+        ]
+    },
+    {
+        "id": "f2_dbg_http",
+        "type": "debug",
+        "z": "tab_flow2_ksem_flex",
+        "name": "HTTP response",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1500,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "f2_resp",
+        "type": "function",
+        "z": "tab_flow2_ksem_flex",
+        "name": "Rückmeldung auswerten",
+        "func": "const statusCode = msg.statusCode;\n\nif (statusCode === 202) {\n  const ampel = msg.payload.status;\n  node.status({ fill: \"green\", shape: \"dot\", text: \"Gesendet! Gesamt-Ampel: \" + ampel.overall });\n  msg.payload = {\n    erfolgreich: true,\n    ampel_gesamt: ampel.overall,\n    ampel_l1: ampel.l1,\n    ampel_l2: ampel.l2,\n    ampel_l3: ampel.l3\n  };\n} else if (statusCode === 422) {\n  node.status({ fill: \"red\", shape: \"ring\", text: \"Validierungsfehler (422)\" });\n  node.error(\"API Fehler 422: Validierung fehlgeschlagen. Wertebereiche prüfen.\", msg);\n} else if (statusCode === 403) {\n  node.status({ fill: \"red\", shape: \"dot\", text: \"Standort gesperrt (403)\" });\n  node.error(\"API Fehler 403: Dieser Standort ist gesperrt.\", msg);\n} else {\n  node.status({ fill: \"yellow\", shape: \"ring\", text: \"Fehler: \" + statusCode });\n}\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1510,
+        "y": 160,
+        "wires": [
+            [
+                "f2_dbg_out"
+            ]
+        ]
+    },
+    {
+        "id": "f2_dbg_out",
+        "type": "debug",
+        "z": "tab_flow2_ksem_flex",
+        "name": "Flow2 result",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1730,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "882c2498be36e6d4",
+        "type": "modbus-client",
+        "name": "KSEM",
+        "clienttype": "tcp",
+        "bufferCommands": true,
+        "stateLogEnabled": false,
+        "queueLogEnabled": false,
+        "failureLogEnabled": true,
+        "tcpHost": "0.0.0.1",
+        "tcpPort": "502",
+        "tcpType": "DEFAULT",
+        "serialPort": "/dev/ttyUSB",
+        "serialType": "RTU-BUFFERD",
+        "serialBaudrate": "9600",
+        "serialDatabits": "8",
+        "serialStopbits": "1",
+        "serialParity": "none",
+        "serialConnectionDelay": "100",
+        "serialAsciiResponseStartDelimiter": "0x3A",
+        "unit_id": 1,
+        "commandDelay": 1,
+        "clientTimeout": 1000,
+        "reconnectOnTimeout": true,
+        "reconnectTimeout": 2000,
+        "parallelUnitIdsAllowed": true,
+        "showErrors": false,
+        "showWarnings": true,
+        "showLogs": true
+    },
+    {
+        "id": "7bac0f28fd63134c",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-modbus": "5.62.1"
+        }
+    }
+]

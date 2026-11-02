@@ -74,7 +74,7 @@ nohup python3 /data/ortsnetz/ortsnetz-victron-gx.py > /dev/null 2>&1 &
 ```python
 LATITUDE = 52.520008
 LONGITUDE = 13.404954
-PLANT_KWP = 10.0          # optional
+PLANT_KWP = None          # optional: tatsächliche installierte PV-Leistung in kWp
 PV_FORECAST_KWH = None    # optional, z. B. 24.5
 SMARTMETER_MODEL = "Victron GX"
 INTERVAL_S = 300

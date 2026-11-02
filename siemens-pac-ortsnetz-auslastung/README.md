@@ -46,7 +46,7 @@ Koordinaten lassen sich mit [OpenStreetMap](https://www.openstreetmap.org/) best
 | `ORTSNETZ_LATITUDE` | Ja | Breitengrad des Messorts |
 | `ORTSNETZ_LONGITUDE` | Ja | Längengrad des Messorts |
 | `ORTSNETZ_PLANT_CAPACITY_KWP` | Nein | Installierte PV-Leistung in kWp |
-| `ORTSNETZ_INTERVAL_S` | Nein | Upload-Intervall in Sekunden, Standard 300 |
+| `ORTSNETZ_INTERVAL_S` | Nein | Upload interval in seconds, default 300; allowed range 300–2147483.647. Invalid values stop startup before any network requests. |
 | `ORTSNETZ_DRY_RUN` | Nein | Wert mit `=1` setzen, um das zu sendende Payload nur auszugeben, ohne an die API zu übertragen; der Prozess beendet sich danach |
 
 ## Docker
@@ -66,7 +66,7 @@ Oder mit [compose.yaml](compose.yaml): `.env` mit den `ORTSNETZ_*`-Werten befül
 - Das API-Format wird automatisch erkannt.
 - Der Model-Name wird automatisch erkannt, z.B. `SIEMENS SENTRON PAC4220`.
 - Phasen ohne gültigen Messwert werden als `-1` gesendet; einphasige Messungen werden auch unterstützt.
-- Spannungswerte außerhalb von 150–300 V je vorhandener Phase werden nicht übertragen.
+- Missing or invalid phase voltages (outside 150–300 V) are sent as `-1`. If no phase is valid, the upload is skipped.
 - Die Frequenz wird nur gesendet, wenn sie zwischen 45 und 55 Hz liegt.
 - Bei `202 Accepted` wird der Ampelstatus geloggt; bei `yellow` zusätzlich eine Warnung.
 - Alle Zeitüberschreitungen betragen 10 Sekunden; Fehler führen nicht zum Abbruch, der nächste Upload-Lauf wird normal erneut versucht.
