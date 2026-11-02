@@ -67,7 +67,7 @@ from weeutil.weeutil import to_bool, to_int, to_float
 import weewx.xtypes
 from weeutil.weeutil import TimeSpan
 
-VERSION = "0.1"
+VERSION = "0.2"
 
 import weeutil.logger
 import logging
@@ -111,6 +111,15 @@ class RESTful(weewx.restx.StdRESTful):
             site_dict.setdefault('pv_forecast_kwh',None)
             site_dict.setdefault('smartmeter_model',None)
             site_dict.setdefault('integration_version','WeeWX %s, uploader %s' % (weewx.__version__,VERSION))
+            # optional data
+            site_dict.setdefault('battery_soc_percent','emsBatteryCharge')
+            site_dict.setdefault('grid_power_w','emsGridPower')
+            site_dict.setdefault('power_factor',None)
+            site_dict.setdefault('apparent_power_va',None)
+            site_dict.setdefault('l1_a',None)
+            site_dict.setdefault('l2_a',None)
+            site_dict.setdefault('l3_a',None)
+            site_dict.setdefault('battery_capacity','installedBatteryCapacity')
         except (ValueError,TypeError,IndexError) as e:
             logerr("longitude latitude %s" % e)
 
@@ -139,6 +148,12 @@ class RESTThread(weewx.restx.RESTThread):
                  l1_v, l2_v, l3_v, grid_frequency_hz, 
                  plant_capacity_kwp, pv_forecast_kwh, 
                  smartmeter_model, integration_version,
+                 battery_soc_percent,
+                 grid_power_w,
+                 power_factor,
+                 apparent_power_va,
+                 l1_a,l2_a,l3_a,
+                 battery_capacity,
                  server_url=RESTful.DEFAULT_URL,
                  skip_upload=False, manager_dict=None,
                  post_interval=None, max_backlog=sys.maxsize, stale=None,
@@ -174,6 +189,14 @@ class RESTThread(weewx.restx.RESTThread):
         self.freq_name = grid_frequency_hz
         self.kwp_name = plant_capacity_kwp
         self.forecast_name = pv_forecast_kwh
+        self.battery_capacity_name = battery_capacity
+        self.fields = [
+            ('battery_soc_percent',battery_soc_percent,'percent'),
+            ('grid_power_w',grid_power_w,'watt'),
+            ('power_factor',power_factor,None),
+            ('apparent_power_va',apparent_power_va,'watt'),
+            ('l1_a',l1_a,'amp'),('l2_a',l2_a,'amp'),('l3_a',l3_a,'amp')
+        ]
         # measuring device and software version
         self.smartmeter_model = smartmeter_model
         self.integration_version = integration_version
@@ -230,6 +253,11 @@ class RESTThread(weewx.restx.RESTThread):
                 kwp = weewx.units.convert(weewx.units.as_value_tuple(record,self.kwp_name),'kilowatt')[0]
                 if kwp is not None:
                     body['plant_capacity_kwp'] = round(kwp,1)
+            # installed battery capacity (optional)
+            if self.battery_capacity_name and self.battery_capacity_name.lower()!='none' and self.battery_capacity_name in record:
+                bat = weewx.units.convert(weewx.units.as_value_tuple(record,self.battery_capacity_name),'kilowatt_hour')[0]
+                if bat is not None:
+                    body['battery_capacity'] = round(bat,1)
             # forecast (optional)
             if self.forecast_name and self.forecast_name.lower()!='none' and self.forecast_name in record:
                 kwh = weewx.units.convert(weewx.units.as_value_tuple(record,self.forecast_name),'kilowatt_hour')[0]
@@ -241,6 +269,16 @@ class RESTThread(weewx.restx.RESTThread):
             # software that collects and posts data
             if self.integration_version:
                 body['integration_version'] = self.integration_version
+            # additional optional data
+            for field in self.fields:
+                if field[1] and field[1].lower()!='none' and field[1] in record:
+                    if field[2]:
+                        x = weewx.units.convert(weewx.units.as_value_tuple(record,field[1]),field[2])[0]
+                    else:
+                        x = record[field[1]]
+                    if x is not None:
+                        if isinstance(x,float): x = round(x,1)
+                        body[field[0]] = x
         except (LookupError, AttributeError, ArithmeticError, ValueError, TypeError) as e:
             raise weewx.restx.FailedPost('invalid data %s' % e)
         # convert to JSON

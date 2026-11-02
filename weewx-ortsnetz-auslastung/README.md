@@ -89,6 +89,15 @@ The configuration section in `weewx.conf` looks like this:
         # name of the observation type to get a forecast form
         # (optional, default no value)
         #pv_forecast_kwh = replace_me
+        # additional optional data
+        battery_soc_percent = emsBatteryCharge
+        grid_power_w = emsGridPower
+        power_factor = none
+        apparent_power_va = none
+        l1_a = none
+        l2_a = none
+        l3_a = none
+        battery_capacity = installedBatteryCapacity
 
 ...
 [Engine]
