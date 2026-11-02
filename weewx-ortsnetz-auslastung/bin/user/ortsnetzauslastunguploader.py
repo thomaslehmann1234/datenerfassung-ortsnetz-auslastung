@@ -159,6 +159,10 @@ class RESTThread(weewx.restx.RESTThread):
                  post_interval=None, max_backlog=sys.maxsize, stale=None,
                  log_success=True, log_failure=True,
                  timeout=60, max_tries=3, retry_wait=5,
+                 retry_login=3600,
+                 retry_ssl=3600,
+                 softwaretype="weewx-%s" % weewx.__version__,
+                 delay_post=None,
                  log_url=False):
         """ initialize thread
         """
@@ -172,7 +176,12 @@ class RESTThread(weewx.restx.RESTThread):
                                           log_failure=log_failure,
                                           max_tries=max_tries,
                                           timeout=timeout,
-                                          retry_wait=retry_wait)
+                                          retry_wait=retry_wait,
+            retry_login=retry_login,
+            retry_ssl=retry_ssl,
+            softwaretype=softwaretype,
+            delay_post=delay_post,
+            skip_upload=skip_upload)
         self.formatter=weewx.units.Formatter()
         # where to upload
         self.server_url = server_url
