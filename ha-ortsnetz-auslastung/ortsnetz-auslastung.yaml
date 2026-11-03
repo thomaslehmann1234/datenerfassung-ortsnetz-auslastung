@@ -10,6 +10,9 @@ triggers:
     trigger: time_pattern
 
 actions:
+  - alias: Random delay (5–60 seconds)
+    delay:
+      seconds: '{{ range(5, 60) | random }}'
 
   # 1. KONFIGURATION – die einzige Stelle, die angepasst werden muss.
   #    Im visuellen Editor ist das der erste Schritt "Konfiguration".

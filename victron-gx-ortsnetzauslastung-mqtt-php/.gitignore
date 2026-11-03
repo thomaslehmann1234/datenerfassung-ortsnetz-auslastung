@@ -1,0 +1,7 @@
+# Lokale Konfiguration und Laufzeitdaten nicht einchecken
+config.php
+status.json
+*.log
+*.log.1
+vendor/
+composer.lock

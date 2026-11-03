@@ -9,20 +9,24 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf)
 - [Home Assistant](#home-assistant)
 - [ioBroker](#iobroker)
+- [EcoFlow Smart Meter (ioBroker)](#ecoflow-smart-meter-iobroker)
 - [FHEM](#fhem)
 - [MQTT](#mqtt)
 - [evcc](#evcc)
 - [Victron GX](#victron-gx)
+- [Victron GX Extern](#victron-gx-extern)
 - [Carlo Gavazzi EM24 (Community)](#carlo-gavazzi-em24-community)
 - [Volkszähler](#volkszähler)
 - [KOSTAL KSEM](#kostal-ksem)
 - [openHAB](#openhab)
 - [Symcon](#symcon)
 - [Fronius](#fronius)
+- [GoodWe](#goodwe)
 - [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate)
 - [USV mit NUT](#usv-mit-nut)
 - [WeeWX](#weewx)
 - [smartWB Wallbox](#smartwb-wallbox)
+- [Loxone Miniserver](#loxone-miniserver)
 - [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
 - [API](#api)
 - [Koordinaten](#koordinaten)
@@ -36,6 +40,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf) | Optische Smart-Meter-Schnittstelle | ESP32 / Tasmota Script | HTTPS / WebQuery | SML-fähige Stromzähler |
 | [Home Assistant](#home-assistant) | Vorhandene Spannungssensoren | Home Assistant / HACS | HTTPS | Home-Assistant-Installationen |
 | [ioBroker](#iobroker) | Vorhandene Spannungsdatenpunkte | ioBroker JavaScript | HTTPS | ioBroker-Installationen |
+| [EcoFlow Smart Meter (ioBroker)](#ecoflow-smart-meter-iobroker) | EcoFlow Smart Meter über die EcoFlow-Cloud | ioBroker JavaScript | HTTPS | EcoFlow Smart Meter mit ioBroker.ecoflow-mqtt |
 | [FHEM](#fhem) | Vorhandene Spannungs-Readings | FHEM `at` (Perl) | HTTPS | FHEM-Installationen |
 | [MQTT](#mqtt) | MQTT-Topics | Node.js / Docker | HTTPS | Smart-Meter-Gateways mit MQTT und EVCC |
 | [evcc](#evcc) | Shelly Gen2/3 oder Modbus TCP | Python / cron | HTTPS | evcc-Installationen mit direktem Zählerzugriff |
@@ -46,10 +51,12 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [openHAB](#openhab) | Vorhandene Smart-Meter-Items | openHAB 4+ / JavaScript | HTTPS | openHAB-Installationen |
 | [Symcon](#symcon) | Vorhandene Spannungsvariablen | Symcon-Modul (PHP) | HTTPS | Symcon-Installationen |
 | [Fronius](#fronius) | Fronius Smart Meter über die Solar API | Python / cron | HTTPS | Fronius-Wechselrichter mit Smart Meter |
+| [GoodWe](#goodwe) | GoodWe Smart Meter über Modbus TCP | Python / cron | HTTPS | GoodWe-Hybridwechselrichter (ET-Plattform) mit Smart Meter |
 | [Siemens PAC Energiemessgeräte](#siemens-pac-energiemessgerate) | REST-API des Messgeräts | Node.js / Docker | HTTPS | Siemens PAC 4200/4220 und ähnliche Energiemessgeräte |
 | [USV mit NUT](#usv-mit-nut) | USV-Eingangsspannung über NUT | Shell / cron | HTTPS | NUT-kompatible einphasige USVs |
 | [WeeWX](#weewx) | Vorhandene Sensoren | Python / systemd | HTTPS | WeeWX mit Zusatzmodul
 | [smartWB Wallbox](#smartwb-wallbox) | HTTP-API der Wallbox (Spannungen L1–L3) | Python / cron / systemd-Timer | HTTPS | smartWB / EVSE-WiFi 2.0 mit Stromzähler |
+| [Loxone Miniserver](#loxone-miniserver) | Vorhandene Bausteine über den Webservice (`/jdev/sps/io`) | Python / systemd / cron | HTTPS | Loxone-Installationen mit Spannungswerten, z. B. aus Modbus-Zählern oder Wechselrichtern |
 
 ## Shelly Pro 3EM und Pro EM50
 
@@ -99,6 +106,14 @@ Das Script für den JavaScript-Adapter liest drei konfigurierte Spannungsdatenpu
 
 Das Script verwendet den eingebauten Helfer `httpPost` und benötigt keine zusätzliche npm-Abhängigkeit.
 
+## EcoFlow Smart Meter (ioBroker)
+
+Das Script für den ioBroker-JavaScript-Adapter liest die Phasenspannungen L1–L3 eines EcoFlow Smart Meters aus dem Adapter `ecoflow-mqtt` und sendet zusätzlich Minimum, Maximum und Mittelwert über das 5-Minuten-Intervall. Außerdem wird die Netzleistung am Hausanschluss übertragen (abschaltbar).
+
+- Ordner: [`ecoflow-ortsnetz-auslastung`](ecoflow-ortsnetz-auslastung)
+- Voraussetzungen: `ioBroker.javascript` ab Version 7.9 und [ioBroker.ecoflow-mqtt](https://github.com/foxthefox/ioBroker.ecoflow-mqtt) mit eingerichtetem Smart Meter
+- Anleitung: [EcoFlow-README](ecoflow-ortsnetz-auslastung/README.md)
+
 ## FHEM
 
 Ein einzelnes FHEM-`at` liest drei vorhandene Spannungs-Readings und optional die Netzfrequenz und sendet sie alle fünf Minuten. Die Antwort der API (Ampel, Speicherladeempfehlung, Redispatch) steht anschließend als Readings zur Verfügung.
@@ -137,6 +152,14 @@ Das Python-Script läuft direkt auf Venus OS und liest Netzspannungen über den 
 - Voraussetzungen: Victron GX mit Venus OS, VE.Bus-Gerät oder Netzzähler, SSH-Zugang und Internetzugang
 
 Installation, Konfiguration und Autostart stehen in der [Victron-GX-README](victron-gx-ortsnetz-auslastung/README.md).
+
+## Victron GX Extern
+
+Das PHP-Script wird nicht auf Venus OS installiert. Das Script läuft als Dienst und liest alle 5 Minuten die Netzspannug und Netzfrequenz aus dem MQTT Broker aus.
+
+- Ordner: [`victron-gx-ortsnetzauslastung-mqtt-php`](victron-gx-ortsnetzauslastung-mqtt-php)
+- Script: [`victron-ortsnetz.php`](victron-gx-ortsnetzauslastung-mqtt-php/victron-ortsnetz.php)
+- Voraussetzungen: Ein Gerät das 24/7 läuft läuft und auf dem PHP installiert ist mit Zugang zum Internet. Erreichbarkeit des Cerbo GX mit freigeschaltetem MQTT. 
 
 ## Carlo Gavazzi EM24 (Community)
 
@@ -196,6 +219,16 @@ Das Python-Script liest die Phasenspannungen und die Netzfrequenz des Fronius Sm
 
 Aktivierung der Solar API, Konfiguration und cron-Eintrag stehen in der [Fronius-README](fronius-ortsnetz-auslastung/README.md).
 
+## GoodWe
+
+Das Python-Script liest die Phasenspannungen, Ströme, die Netzfrequenz und die Netzleistung des GoodWe Smart Meters am Netzanschlusspunkt über die Modbus-TCP-Schnittstelle des Wechselrichters und wird alle fünf Minuten per cron ausgeführt. Der Zugriff erfolgt ausschließlich lesend. Ist eine Batterie vorhanden, wird zusätzlich der Ladezustand übertragen, optional die installierte PV-Leistung und die Batteriekapazität.
+
+- Ordner: [`goodwe-ortsnetz-auslastung`](goodwe-ortsnetz-auslastung)
+- Script: [`ortsnetz_goodwe.py`](goodwe-ortsnetz-auslastung/ortsnetz_goodwe.py)
+- Voraussetzungen: GoodWe-Hybridwechselrichter der ET-Plattform (z. B. GW10KN-ET, EH, BT, BH) mit Smart Meter am Netzanschlusspunkt, erreichbares Modbus TCP (Port 502), Linux mit Python ab 3.8, cron und Internetzugang
+
+Registerbelegung, Konfiguration und cron-Eintrag stehen in der [GoodWe-README](goodwe-ortsnetz-auslastung/README.md).
+
 ## Siemens PAC Energiemessgeräte
 
 Das Node.js-Script liest die Phasenspannungen und die Netzfrequenz über die lokale REST API des Messgeräts und wird alle fünf Minuten ausgeführt. Es erkennt automatisch das API-Format (`data.json` mit `type=INST_VALUES` oder `/api-webserver/values/base`) sowie den Zählernamen. Konfiguration erfolgt über Umgebungsvariablen; einphasige Geräte werden mit `-1` für nicht vorhandene Phasen unterstützt.
@@ -232,6 +265,16 @@ Das Python-Script liest die Phasenspannungen einer smartWB / EVSE-WiFi 2.0 Wallb
 - Voraussetzungen: smartWB / EVSE-WiFi 2.0 mit konfiguriertem Stromzähler, im Heimnetz erreichbar (IP bekannt) und mit aktivierter API, Linux mit Python ab 3.8, cron oder systemd und Internetzugang
 
 Installation, Konfiguration, cron-Eintrag und systemd-Timer stehen in der [smartWB-README](smartwb-ortsnetz-auslastung/README.md).
+
+## Loxone Miniserver
+
+Das Python-Script liest Spannungen (optional Frequenz, Phasenströme, Leistungsfaktor, Netzleistung, Speicher-SOC und die heutige PV-Prognose) aus beliebigen Bausteinen eines Loxone Miniservers über dessen Webservice (`/jdev/sps/io/<Bezeichnung>`). Im Dauerbetrieb liest es alle 10 Sekunden und sendet alle fünf Minuten die Messung mit Minimum, Maximum und Mittelwert über das Intervall; `--once` sendet eine einzelne Messung (cron).
+
+- Ordner: [`loxone-ortsnetz-auslastung`](loxone-ortsnetz-auslastung)
+- Script: [`ortsnetz_loxone.py`](loxone-ortsnetz-auslastung/ortsnetz_loxone.py)
+- Voraussetzungen: Loxone Miniserver im Heimnetz, ein Loxone-Benutzer mit Leserechten auf die gelesenen Bausteine, Linux mit Python ab 3.8, systemd oder cron und Internetzugang
+
+Installation, Konfiguration und systemd-Dienst stehen in der [Loxone-README](loxone-ortsnetz-auslastung/README.md).
 
 ## Gemeinsame Eigenschaften
 
