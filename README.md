@@ -226,11 +226,13 @@ Installation, Konfiguration, cron-Eintrag und systemd-Timer stehen in der [smart
 
 ## E3DC
 
-Das Python-Script liest die Phasenspannungen von einem Hauskraftwerk via RSCP aus und überträgt sie via HTTPS an die Webseite. Es muss via Cron oder Systemd Timer automatisch angestoßen werden.
+Das Python-Script liest die Phasenspannungen und die Netzfrequenz von einem Hauskraftwerk via RSCP aus und überträgt sie via HTTPS an die Webseite. Es muss via Cron oder Systemd Timer automatisch angestoßen werden.
 
-- Ordner: [`e3dc-ortsnetz-austlastung`](e3dc-ortsnetz-auslastung)
+- Ordner: [`e3dc-ortsnetz-auslastung`](e3dc-ortsnetz-auslastung)
 - Script: [`e3dc_ortsnetz.py`](e3dc-ortsnetz-auslastung/e3dc_ortsnetz.py)
 - Voraussetzungen: Python Host welcher Dauerhaft läuft und mit dem E3DC Hauskraftwerk im gleichen Subnetz ist und mit dem Internet kommunizieren kann. Automatisierung muss via cron der systemd gemacht werden.
+- Konfiguration: Zugangsdaten und Standort stehen in einer `.env`-Datei (`.env.example`), nicht im Script. Der Netzzähler wird über den Typ `PM_TYPE_ROOT` gefunden, der Index ist konfigurierbar.
+- Exit-Codes: 0 Erfolg, 1 Konfiguration, 2 RSCP, 3 Messung, 4 API – für cron-, systemd- und Monitoring-Auswertung.
 
 ## Gemeinsame Eigenschaften
 
