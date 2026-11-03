@@ -52,6 +52,11 @@
    https://www.ortsnetz-auslastung.de/
    https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung
    
+   According to the API documentation the response status can be:
+   - 202 Accepted
+   - 422 Unprocessable Entity
+   - 403 Forbidden
+
 """
 
 import queue
@@ -329,6 +334,50 @@ class RESTThread(weewx.restx.RESTThread):
             loginf(body)
         # return data and MIME type
         return body, 'application/json'
-    
+
+    def check_response(self, response):
+        """ Process response in case of success
+
+            Note: This method is called for status 200 to 299 only. In case
+                  of failure, it is not called. A logging message about
+                  success or failure is created by the system. It is not
+                  required here.
+        """
+        # Status logging (should always be "202 Accepted" here)
+        if self.log_url:
+            loginf('Received status: %s %s' % (response.status, response.reason))
+        # get the reply, a JSON object
+        try:
+            reply = json.loads(response.read(512))
+            # Log the reply in case data logging is requested
+            if self.log_url:
+                loginf('Received data: %s' % reply)
+        except (ValueError,TypeError) as e:
+            # Note: json.JSONDecodeError is a subclass of ValueError
+            if self.log_failure:
+                logerr('Error processing reply: %s %s' % (e.__class__.__name__,e))
+            return
+        #TODO: process reply
+        """
+        The reply could look like this:
+        {
+          "accepted": true,
+          "created": true,
+          "status": {
+            "l1": "green",
+            "l2": "green",
+            "l3": "green",
+            "overall": "green"
+          },
+          "storage_recommendation": "none",
+          "redispatch": {
+            "active": null,
+            "affected_units": null,
+            "active_measures": null,
+            "data_updated_at": null
+          }
+        }
+        """
+
 
 loginf("version %s" % VERSION)

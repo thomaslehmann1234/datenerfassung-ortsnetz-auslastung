@@ -26,7 +26,7 @@ CONFIG = """[StdRESTful]
         l3_v = pmGridVoltageL3
         grid_frequency_hz = heataccuMainsFrequency
         plant_capacity_kwp = installedPVPeakPower
-        # name of the observation type to get a forecast form
+        # name of the observation type to get a forecast from
         # (optional, default no value)
         #pv_forecast_kwh = replace_me
         # additional optional data
