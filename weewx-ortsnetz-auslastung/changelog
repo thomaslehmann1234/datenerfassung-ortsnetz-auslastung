@@ -4,3 +4,4 @@
 * additional fields
 * plant nominal power and battery capacity can be specified in weewx.conf
 * fix `skip_upload`
+* check fields `accepted` and `created` in the response

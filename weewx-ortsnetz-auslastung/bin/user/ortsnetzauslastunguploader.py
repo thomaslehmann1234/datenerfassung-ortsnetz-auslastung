@@ -73,6 +73,7 @@ import weewx.units
 from weeutil.weeutil import to_bool, to_int, to_float
 import weewx.xtypes
 from weeutil.weeutil import TimeSpan
+from weewx.restx import FailedPost
 
 VERSION = "0.2"
 
@@ -349,15 +350,22 @@ class RESTThread(weewx.restx.RESTThread):
         # get the reply, a JSON object
         try:
             reply = json.loads(response.read(512))
-            # Log the reply in case data logging is requested
-            if self.log_url:
-                loginf('Received data: %s' % reply)
         except (ValueError,TypeError) as e:
             # Note: json.JSONDecodeError is a subclass of ValueError
             if self.log_failure:
-                logerr('Error processing reply: %s %s' % (e.__class__.__name__,e))
+                logerr('Error decoding reply: %s %s' % (e.__class__.__name__,e))
             return
-        #TODO: process reply
+        # Log the reply in case data logging is requested
+        if self.log_url:
+            loginf('Received data: %s' % reply)
+        # Report if "accepted" or "created" are not `True`
+        # (In case the reply does not contain the fields "accepted" and/or
+        # "created" we do not know and therefore do not report anything.)
+        if not reply.get('accepted',True):
+            raise FailedPost('The server received the record successfully but did not accept it.')
+        if not reply.get('created',True):
+            raise FailedPost('The server could not process the record.')
+        #TODO: further process reply
         """
         The reply could look like this:
         {
