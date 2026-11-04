@@ -8,6 +8,7 @@ import tempfile
 import types
 import unittest
 import urllib.error
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 SCRIPT = pathlib.Path(__file__).with_name("e3dc_ortsnetz.py")
@@ -92,6 +93,10 @@ UMGEBUNG = {
     "METER_INDEX": "",
     "PLANT_CAPACITY_KWP": "",
     "BATTERY_CAPACITY_KWH": "",
+    "PV_FORECAST_HA_URL": "",
+    "PV_FORECAST_HA_TOKEN": "",
+    "PV_FORECAST_HA_ENTITY": "",
+    "PV_FORECAST_MAX_AGE_S": "",
     "PV_FORECAST_DATEI": "",
     "PV_FORECAST_BEFEHL": "",
     "SMARTMETER_MODEL": "",
@@ -380,7 +385,7 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(payload["grid_frequency_hz"], 50.02)
         self.assertEqual(payload["grid_power_w"], -4200.0)
         self.assertEqual(payload["battery_soc_percent"], 57)
-        self.assertEqual(payload["integration_version"], "e3dc-rscp-1.2")
+        self.assertEqual(payload["integration_version"], "e3dc-rscp-1.3")
         self.assertRegex(payload["observed_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertNotIn("plant_capacity_kwp", payload)
         self.assertNotIn("battery_capacity", payload)
@@ -594,6 +599,206 @@ class PrognoseQuellenTests(unittest.TestCase):
         self.assertEqual(zeilen, [], "ohne Quelle wird nicht gewarnt")
 
 
+def sensorantwort(state, einheit="kWh", alter=0, entity="sensor.pv_prognose"):
+    """Liefert eine Home-Assistant-Sensorantwort wie /api/states; alter in Sekunden seit jetzt."""
+    zeit = datetime.fromtimestamp(ZEIT - alter, timezone.utc).isoformat()
+    attributes = {"friendly_name": "PV-Prognose"}
+    if einheit is not None:
+        attributes["unit_of_measurement"] = einheit
+    return {"entity_id": entity, "state": state, "attributes": attributes,
+            "last_updated": zeit, "last_reported": zeit}
+
+
+def ha_abruf(antworten, aufzeichnungen=None):
+    """urllib.request.urlopen-Ersatz für die Home-Assistant-Abfrage, eine Antwort je Aufruf."""
+    vorrat = list(antworten)
+
+    def abfrage(anfrage, timeout=None):
+        if aufzeichnungen is not None:
+            aufzeichnungen.append(anfrage)
+        if not vorrat:
+            raise urllib.error.URLError("keine Antwort")
+        antwort = vorrat.pop(0)
+        if isinstance(antwort, urllib.error.HTTPError):
+            raise antwort
+        return FakeAntwort(200, json.dumps(antwort))
+
+    return abfrage
+
+
+class HomeAssistantTests(unittest.TestCase):
+    URL = "http://192.168.60.10:8123"
+    TOKEN = "langlebigertoken"
+    ENTITY = "sensor.pv_prognose"
+
+    def setUp(self):
+        self.ordner = tempfile.TemporaryDirectory()
+        self.addCleanup(self.ordner.cleanup)
+
+    def lesen(self, antworten, kapazitaet=9.8, entity=ENTITY, max_age=3600,
+              weitere=None, aufzeichnungen=None, url=None):
+        """Liefert (pv_forecast_kwh, Logzeilen) für die angegebenen Sensorantworten."""
+        patcher, zeilen = logfanger()
+        with patcher, patch.object(MODULE, "PV_FORECAST_HA_URL", url or self.URL), \
+             patch.object(MODULE, "PV_FORECAST_HA_TOKEN", self.TOKEN), \
+             patch.object(MODULE, "PV_FORECAST_HA_ENTITY", entity), \
+             patch.object(MODULE, "PV_FORECAST_MAX_AGE_S", max_age), \
+             patch.object(MODULE, "jetzt", lambda: ZEIT), \
+             patch("urllib.request.urlopen", side_effect=ha_abruf(antworten, aufzeichnungen)):
+            for name, wert in (weitere or {}).items():
+                patcher2 = patch.object(MODULE, name, wert)
+                patcher2.start()
+                self.addCleanup(patcher2.stop)
+            return MODULE.pv_forecast_lesen(kapazitaet), zeilen
+
+    def test_sensor_kwh(self):
+        wert, zeilen = self.lesen([sensorantwort("24.5")])
+        self.assertEqual(wert, 24.5)
+        self.assertEqual(zeilen, [], "gültiger Sensor wird nicht beanstandet")
+
+    def test_sensor_zahl_als_float(self):
+        wert, _ = self.lesen([sensorantwort(24.5)])
+        self.assertEqual(wert, 24.5)
+
+    def test_einheit_wh(self):
+        wert, _ = self.lesen([sensorantwort("24500", einheit="Wh")])
+        self.assertEqual(wert, 24.5)
+
+    def test_einheit_mwh(self):
+        wert, _ = self.lesen([sensorantwort("0.0245", einheit="MWh")])
+        self.assertEqual(wert, 24.5)
+
+    def test_einheit_fehlt(self):
+        wert, zeilen = self.lesen([sensorantwort("24.5", einheit=None)])
+        self.assertEqual(wert, None, "ohne unit_of_measurement wird nicht geraten")
+        self.assertTrue(any("Energieeinheit" in z for z in zeilen))
+
+    def test_einheit_watt(self):
+        wert, zeilen = self.lesen([sensorantwort("24500", einheit="W")])
+        self.assertEqual(wert, None, "Leistung statt Energie wird nicht umgerechnet")
+        self.assertTrue(any("Energieeinheit" in z for z in zeilen))
+
+    def test_unavailable(self):
+        wert, zeilen = self.lesen([sensorantwort("unavailable")])
+        self.assertEqual(wert, None)
+        self.assertTrue(any("keine Zahl" in z for z in zeilen))
+
+    def test_veralteter_sensor(self):
+        wert, zeilen = self.lesen([sensorantwort("24.5", alter=7200)], max_age=3600)
+        self.assertEqual(wert, None, "Abendwert bleibt nachts stehen und darf nicht gesendet werden")
+        self.assertTrue(any("s alt" in z for z in zeilen))
+
+    def test_max_age_null_deaktiviert(self):
+        wert, zeilen = self.lesen([sensorantwort("24.5", alter=100000)], max_age=0)
+        self.assertEqual(wert, 24.5)
+        self.assertEqual(zeilen, [], "max_age 0 prüft das Alter nicht")
+
+    def test_last_reported_vor_last_updated(self):
+        antwort = sensorantwort("24.5", alter=7200)
+        antwort["last_updated"] = datetime.fromtimestamp(ZEIT - 7200, timezone.utc).isoformat()
+        antwort["last_reported"] = datetime.fromtimestamp(ZEIT, timezone.utc).isoformat()
+        wert, _ = self.lesen([antwort])
+        self.assertEqual(wert, 24.5, "last_reported ist der maßgebliche Zeitstempel")
+
+    def test_ohne_zeitangabe(self):
+        antwort = sensorantwort("24.5")
+        antwort.pop("last_reported")
+        antwort.pop("last_updated")
+        wert, zeilen = self.lesen([antwort])
+        self.assertEqual(wert, None)
+        self.assertTrue(any("Alter nicht prüfbar" in z for z in zeilen))
+
+    def test_zwei_sensoren_summe(self):
+        wert, _ = self.lesen([sensorantwort("10.0", entity="sensor.pv_sud"),
+                              sensorantwort("5.5", entity="sensor.pv_west")],
+                             entity="sensor.pv_sud,sensor.pv_west")
+        self.assertEqual(wert, 15.5)
+
+    def test_zwei_sensoren_einer_unavailable(self):
+        wert, zeilen = self.lesen([sensorantwort("unavailable", entity="sensor.pv_sud"),
+                                   sensorantwort("5.5", entity="sensor.pv_west")],
+                                  entity="sensor.pv_sud,sensor.pv_west")
+        self.assertEqual(wert, 5.5, "ein Ausfall überspringt nur diesen Sensor")
+
+    def test_url_und_token(self):
+        aufzeichnungen = []
+        wert, _ = self.lesen([sensorantwort("24.5")], aufzeichnungen=aufzeichnungen)
+        self.assertEqual(wert, 24.5)
+        anfrage = aufzeichnungen[0]
+        self.assertEqual(anfrage.full_url, self.URL + "/api/states/sensor.pv_prognose")
+        self.assertEqual(anfrage.headers["Authorization"], "Bearer " + self.TOKEN)
+
+    def test_url_mit_schraegstrich(self):
+        aufzeichnungen = []
+        self.lesen([sensorantwort("24.5")], aufzeichnungen=aufzeichnungen, url=self.URL + "/")
+        anfrage = aufzeichnungen[0]
+        self.assertEqual(anfrage.full_url, self.URL + "/api/states/sensor.pv_prognose")
+        self.assertNotIn("//api", anfrage.full_url, "doppelter Schrägstrich vermieden")
+
+    def test_401(self):
+        wert, zeilen = self.lesen([http_fehler(401, "Unauthorized")])
+        self.assertEqual(wert, None, "Sensorausfall darf die Messung nicht blockieren")
+        self.assertTrue(any("nicht abrufbar" in z for z in zeilen))
+
+    def test_403(self):
+        wert, zeilen = self.lesen([http_fehler(403, "Forbidden")])
+        self.assertEqual(wert, None)
+        self.assertTrue(any("nicht abrufbar" in z for z in zeilen))
+
+    def test_verbindungsabbruch(self):
+        wert, zeilen = self.lesen([urllib.error.URLError("keine Route")])
+        self.assertEqual(wert, None)
+        self.assertTrue(any("nicht abrufbar" in z for z in zeilen))
+
+    def test_ohne_sensorobjekt(self):
+        wert, zeilen = self.lesen([[1, 2, 3]])
+        self.assertEqual(wert, None)
+        self.assertTrue(any("ohne Sensorobjekt" in z for z in zeilen))
+
+    def test_vorrang_ha_vor_datei(self):
+        pfad = pathlib.Path(self.ordner.name) / "prognose.json"
+        pfad.write_text('{"pv_forecast_kwh": 50}')
+        wert, _ = self.lesen([sensorantwort("24.5")], weitere={"PV_FORECAST_DATEI": str(pfad)})
+        self.assertEqual(wert, 24.5, "Home Assistant wird zuerst gelesen")
+
+    def test_datei_wenn_sensor_unavailable(self):
+        pfad = pathlib.Path(self.ordner.name) / "prognose.json"
+        pfad.write_text('{"pv_forecast_kwh": 12.3}')
+        wert, _ = self.lesen([sensorantwort("unavailable")], weitere={"PV_FORECAST_DATEI": str(pfad)})
+        self.assertEqual(wert, 12.3, "Ausfall fällt auf die Datei zurück")
+
+    def test_keine_quelle_keine_abfrage(self):
+        patcher, zeilen = logfanger()
+        with patcher, patch.object(MODULE, "PV_FORECAST_HA_ENTITY", ""), \
+             patch.object(MODULE, "PV_FORECAST_DATEI", ""), \
+             patch.object(MODULE, "PV_FORECAST_BEFEHL", ""), \
+             patch("urllib.request.urlopen", side_effect=AssertionError("HA wird nicht abgerufen")):
+            self.assertEqual(MODULE.pv_forecast_lesen(9.8), None)
+        self.assertEqual(zeilen, [], "ohne Quelle wird nicht gewarnt")
+
+    def test_grenze_10_kwh_je_kwp(self):
+        wert, zeilen = self.lesen([sensorantwort("99")], kapazitaet=9.8)
+        self.assertEqual(wert, None, "99 kWh über 98 kWh")
+        self.assertTrue(any("überschreitet" in z for z in zeilen))
+
+    def test_ohne_anlagengroesse(self):
+        wert, zeilen = self.lesen([sensorantwort("24.5")], kapazitaet=None)
+        self.assertEqual(wert, None, "API antwortet 422 ohne Anlagengröße")
+        self.assertTrue(any("422" in z for z in zeilen))
+
+    def test_iso_zeit_mit_z(self):
+        self.assertEqual(MODULE.zeitpunkt_aus_iso("2026-11-04T08:00:00Z"),
+                         int(datetime(2026, 11, 4, 8, 0, 0, tzinfo=timezone.utc).timestamp()))
+
+    def test_iso_zeit_ohne_zona(self):
+        self.assertEqual(MODULE.zeitpunkt_aus_iso("2026-11-04T08:00:00"),
+                         int(datetime(2026, 11, 4, 8, 0, 0, tzinfo=timezone.utc).timestamp()))
+
+    def test_iso_zeit_unlesbar(self):
+        self.assertEqual(MODULE.zeitpunkt_aus_iso("nicht datiert"), None)
+        self.assertEqual(MODULE.zeitpunkt_aus_iso(None), None)
+
+
 class AntwortTests(unittest.TestCase):
     def werten(self, antwort):
         patcher, zeilen = logfanger()
@@ -632,7 +837,9 @@ class KonfigurationTests(unittest.TestCase):
         for name, wert in (("E3DC_HOST", ""), ("E3DC_USERNAME", ""), ("E3DC_PASSWORD", ""),
                            ("RSCP_KEY", ""), ("LATITUDE", None), ("LONGITUDE", None),
                            ("METER_INDEX", None), ("PLANT_CAPACITY_KWP", None),
-                           ("BATTERY_CAPACITY_KWH", None), ("PV_FORECAST_DATEI", ""),
+                           ("BATTERY_CAPACITY_KWH", None), ("PV_FORECAST_HA_URL", ""),
+                           ("PV_FORECAST_HA_TOKEN", ""), ("PV_FORECAST_HA_ENTITY", ""),
+                           ("PV_FORECAST_MAX_AGE_S", 3600), ("PV_FORECAST_DATEI", ""),
                            ("PV_FORECAST_BEFEHL", ""), ("SMARTMETER_MODEL", ""),
                            ("STATE_DATEI", ""), ("SENDINTERVALL_S", 300), ("ENV_DATEI", None)):
             patcher = patch.object(MODULE, name, wert)
@@ -736,11 +943,65 @@ class KonfigurationTests(unittest.TestCase):
                 MODULE.konfiguration_pruefen()
         self.assertIn("300", str(fehler.exception))
 
+    def test_ha_prognose(self):
+        with patch.dict("os.environ", umgebung(PV_FORECAST_HA_URL="http://192.168.60.10:8123",
+                                               PV_FORECAST_HA_TOKEN="token",
+                                               PV_FORECAST_HA_ENTITY="sensor.pv_sud,sensor.pv_west"),
+                        clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            MODULE.konfiguration_pruefen()
+        self.assertEqual(MODULE.PV_FORECAST_HA_ENTITY, "sensor.pv_sud,sensor.pv_west")
+        self.assertEqual(MODULE.PV_FORECAST_MAX_AGE_S, 3600, "Standardalter")
+
+    def test_ha_entity_ohne_url(self):
+        with patch.dict("os.environ", umgebung(PV_FORECAST_HA_ENTITY="sensor.pv_prognose"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler) as fehler:
+                MODULE.konfiguration_pruefen()
+        self.assertIn("http://", str(fehler.exception))
+
+    def test_ha_url_ohne_schema(self):
+        with patch.dict("os.environ", umgebung(PV_FORECAST_HA_URL="192.168.60.10:8123",
+                                               PV_FORECAST_HA_TOKEN="token",
+                                               PV_FORECAST_HA_ENTITY="sensor.pv_prognose"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler):
+                MODULE.konfiguration_pruefen()
+
+    def test_ha_token_fehlt(self):
+        with patch.dict("os.environ", umgebung(PV_FORECAST_HA_URL="http://192.168.60.10:8123",
+                                               PV_FORECAST_HA_ENTITY="sensor.pv_prognose"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler) as fehler:
+                MODULE.konfiguration_pruefen()
+        self.assertIn("PV_FORECAST_HA_TOKEN", str(fehler.exception))
+
+    def test_ha_entity_ohne_punkt(self):
+        with patch.dict("os.environ", umgebung(PV_FORECAST_HA_URL="http://192.168.60.10:8123",
+                                               PV_FORECAST_HA_TOKEN="token",
+                                               PV_FORECAST_HA_ENTITY="pv_prognose"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler) as fehler:
+                MODULE.konfiguration_pruefen()
+        self.assertIn("sensor.name", str(fehler.exception))
+
+    def test_max_age_negativ(self):
+        with patch.dict("os.environ", umgebung(PV_FORECAST_MAX_AGE_S="-1"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler):
+                MODULE.konfiguration_pruefen()
+
 
 class SendeTests(unittest.TestCase):
     payload = {"observed_at": "2026-09-15T08:00:00Z", "latitude": 48.1, "longitude": 11.7,
                "l1_v": 230.0, "l2_v": 230.0, "l3_v": 230.0,
-               "smartmeter_model": "E3DC Hauskraftwerk", "integration_version": "e3dc-rscp-1.2"}
+               "smartmeter_model": "E3DC Hauskraftwerk", "integration_version": "e3dc-rscp-1.3"}
 
     def status(self, code, text):
         with patch("urllib.request.urlopen", return_value=FakeAntwort(code, text)):
@@ -774,7 +1035,9 @@ class MainTests(unittest.TestCase):
         for name, wert in (("E3DC_HOST", ""), ("E3DC_USERNAME", ""), ("E3DC_PASSWORD", ""),
                            ("RSCP_KEY", ""), ("LATITUDE", None), ("LONGITUDE", None),
                            ("METER_INDEX", None), ("PLANT_CAPACITY_KWP", None),
-                           ("BATTERY_CAPACITY_KWH", None), ("PV_FORECAST_DATEI", ""),
+                           ("BATTERY_CAPACITY_KWH", None), ("PV_FORECAST_HA_URL", ""),
+                           ("PV_FORECAST_HA_TOKEN", ""), ("PV_FORECAST_HA_ENTITY", ""),
+                           ("PV_FORECAST_MAX_AGE_S", 3600), ("PV_FORECAST_DATEI", ""),
                            ("PV_FORECAST_BEFEHL", ""), ("SMARTMETER_MODEL", ""),
                            ("SENDINTERVALL_S", 300), ("ENV_DATEI", None)):
             patcher = patch.object(MODULE, name, wert)
@@ -868,6 +1131,29 @@ class MainTests(unittest.TestCase):
         self.assertEqual(self.main(fake, ["--dry-run"], gesendet=gesendet), 0)
         self.assertEqual(gesendet, [], "--dry-run sendet nichts")
         self.assertFalse(pathlib.Path(self.pfad).exists(), "--dry-run schreibt die State-Datei nicht")
+
+    def test_ha_ausfall_sendet_messung(self):
+        # Sensor nicht erreichbar: Warnung im Log, die Messung wird trotzdem übertragen
+        fake = FakeE3DC(frequenz=50.01, peak=9800)
+        gesendet = []
+        with patch.object(MODULE, "PV_FORECAST_HA_URL", "http://192.168.60.10:8123"), \
+             patch.object(MODULE, "PV_FORECAST_HA_TOKEN", "token"), \
+             patch.object(MODULE, "PV_FORECAST_HA_ENTITY", "sensor.pv_prognose"), \
+             patch("urllib.request.urlopen", side_effect=urllib.error.URLError("keine Route")):
+            self.assertEqual(self.main(fake, gesendet=gesendet), 0)
+        self.assertEqual(gesendet[0]["l1_v"], 230.15, "Messung wird übertragen")
+        self.assertNotIn("pv_forecast_kwh", gesendet[0], "Feld wird weggelassen")
+
+    def test_ha_prognose_im_hauptlauf(self):
+        fake = FakeE3DC(frequenz=50.01, peak=9800)
+        antwort = sensorantwort("24.5")
+        gesendet = []
+        with patch.object(MODULE, "PV_FORECAST_HA_URL", "http://192.168.60.10:8123"), \
+             patch.object(MODULE, "PV_FORECAST_HA_TOKEN", "token"), \
+             patch.object(MODULE, "PV_FORECAST_HA_ENTITY", "sensor.pv_prognose"), \
+             patch("urllib.request.urlopen", side_effect=ha_abruf([antwort])):
+            self.assertEqual(self.main(fake, gesendet=gesendet), 0)
+        self.assertEqual(gesendet[0]["pv_forecast_kwh"], 24.5)
 
     def test_konfiguration(self):
         with patch.dict("os.environ", umgebung(E3DC_HOST=""), clear=True):

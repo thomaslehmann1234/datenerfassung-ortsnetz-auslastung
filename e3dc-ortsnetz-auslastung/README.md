@@ -42,6 +42,10 @@ Zugangsdaten und Standort stehen in einer `.env`-Datei oder in Environment-Varia
 | `PLANT_CAPACITY_KWP` | – | Installierte PV-Leistung in kWp. Leer = die installierte Spitzenleistung des Kraftwerks |
 | `BATTERY_CAPACITY_KWH` | – | Nutzbare Batteriespeicherkapazität aus dem Datenblatt. Leer = die installierte Kapazität als Näherung |
 | `SMARTMETER_MODEL` | – | Freie Bezeichnung des Messgeräts. Leer = Modell und Seriennummer des Kraftwerks |
+| `PV_FORECAST_HA_URL` | – | Basis-URL des Home Assistant, z. B. `http://192.168.60.10:8123`; nur für die Prognose |
+| `PV_FORECAST_HA_TOKEN` | – | Long-lived Token mit Scope *Read & Historical* für die Prognose aus Home Assistant |
+| `PV_FORECAST_HA_ENTITY` | – | Kommata-Liste der Prognosesensoren, z. B. `sensor.pv_prognose_sud,sensor.pv_prognose_west` |
+| `PV_FORECAST_MAX_AGE_S` | – | Prognosewerte älter als diese Sekunden werden nicht gesendet, Standard 3600; `0` schaltet die Altersprüfung ab |
 | `PV_FORECAST_DATEI` | – | Datei mit der PV-Tagesprognose in kWh (evcc, Home Assistant, ioBroker) |
 | `PV_FORECAST_BEFEHL` | – | Befehl, der die kWh-Zahl der Prognose in die Standardsausgabe schreibt |
 | `STATE_DATEI` | – | State-Datei der Stichproben. Leer = `~/.local/state/ortsnetz-e3dc/state.json`, bei systemd `/var/lib/ortsnetz-e3dc/state.json` |
@@ -135,7 +139,7 @@ python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py --dry-run
   "l2_v": 231.02,
   "l3_v": 229.85,
   "smartmeter_model": "E3/DC S10_Mini 8800123456789",
-  "integration_version": "e3dc-rscp-1.2",
+  "integration_version": "e3dc-rscp-1.3",
   "l1_v_min": 229.0,
   "l1_v_max": 231.5,
   "l1_v_avg": 230.23,
@@ -152,7 +156,8 @@ python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py --dry-run
   "grid_power_w": -4200.0,
   "battery_soc_percent": 57,
   "plant_capacity_kwp": 9.8,
-  "battery_capacity": 10.4
+  "battery_capacity": 10.4,
+  "pv_forecast_kwh": 24.5
 }
 ```
 
@@ -211,7 +216,7 @@ Nur einen der beiden Wege (cron **oder** systemd-Timer) einrichten, sonst werden
 * Ladezustand des Batteriespeichers (`battery_soc_percent`)
 * installierte PV-Leistung und Batteriespeicherkapazität, aus den Systemangaben des Kraftwerks oder der Konfiguration
 * Modell und Seriennummer des Hauskraftwerks als Bezeichnung des Messgeräts
-* optional die PV-Tagesprognose aus einer externen Quelle
+* optional die PV-Tagesprognose aus Home Assistant (REST API), einer Datei oder einem Befehl
 * Kennung der Integration
 
 **Neu gegenüber der ersten Version:** Netzleistung, Ladezustand, Kapazitäten, Seriennummer des Kraftwerks und die Kennzahlen über das Intervall.
@@ -220,12 +225,43 @@ Nicht übertragen werden insbesondere: Zugangsdaten, RSCP-Schlüssel, IP-Adresse
 
 ### PV-Prognose
 
-pye3dc liefert **keine** PV-Prognose – weder lokal noch über die Web-Verbindung (`wss://s10.e3dc.com/ws` ist nur ein RSCP-Kanal zum Kraftwerk, die Portal-Prognose gehört nicht zum RSCP-Tag-Satz). `pv_forecast_kwh` kommt deshalb aus einer externen Quelle, wie in den anderen Integrationen dieses Repos:
+pye3dc liefert **keine** PV-Prognose – weder lokal noch über die Web-Verbindung (`wss://s10.e3dc.com/ws` ist nur ein RSCP-Kanal zum Kraftwerk, die Portal-Prognose gehört nicht zum RSCP-Tag-Satz). `pv_forecast_kwh` kommt deshalb aus einer externen Quelle, wie in den anderen Integrationen dieses Repos. Reihenfolge: **Home Assistant, dann Datei, dann Befehl**; alle leer = das Feld wird nicht übertragen.
+
+### Prognose aus Home Assistant
+
+Home Assistant hat die Prognose meist schon (Solar-Forecast, entao, EVCC-Integration). Das Skript fragt die Sensoren über die REST API ab, ohne selbst zu prognostizieren:
+
+```
+PV_FORECAST_HA_URL=http://192.168.60.10:8123
+PV_FORECAST_HA_TOKEN=<long-lived Token, Scope Read & Historical>
+PV_FORECAST_HA_ENTITY=sensor.pv_prognose_sud,sensor.pv_prognose_west
+PV_FORECAST_MAX_AGE_S=3600
+```
+
+* Der Aufruf ist `GET /api/states/<entity>` mit `Authorization: Bearer …`, 15 s Timeout je Sensor. Mehrere Sensoren werden **addiert**, für eine Ost/West-Anlage also ein Sensor je Teilanlage.
+* Der Sensor muss **Energie in kWh** melden (`unit_of_measurement: "kWh"`). `Wh` und `MWh` werden umgerechnet; eine fehlende oder unbekannte Einheit (besonders `W`, also Leistung) wird **nicht geraten**, der Sensor übersprungen. Ein Template-Sensor in kWh:
+
+  ```yaml
+  template:
+    - sensor:
+        - name: pv_prognose_today_kwh
+          unit_of_measurement: "kWh"
+          state: >-
+            {{ ((states('sensor.solar_forecast_production_today') | float(0)) / 1000) | round(1) }}
+  ```
+
+* Das Alter wird über `last_reported` (ersatzweise `last_updated`) geprüft. Nachts behält ein Sensor den Abendwert; ein Wert älter als `PV_FORECAST_MAX_AGE_S` Sekunden wird übersprungen. `unavailable` und `unknown` (nachts) ebenfalls.
+* Token in der `.env` mit `chmod 600`, nie als Befehlsargument und nie ins Log.
+* Ein Sensorausfall überschreibt die Messung nicht: das Skript warnt und sendet die Messung ohne `pv_forecast_kwh` (Exit-Code `0`).
+* Bei mehreren Sensoren und 15 s Timeout je Sensor bleiben bei drei Sensoren noch rund 15 s für Hauskraftwerk und API innerhalb der 60 s Laufzeit.
+
+### Prognose aus Datei oder Befehl
 
 * `PV_FORECAST_DATEI`: eine Datei, die evcc, Home Assistant oder ioBroker mit der kWh-Zahl schreiben (Zahl, Text oder JSON mit einem der Schlüssel `pv_forecast_kwh`, `pv_forecast`, `kwh`, `forecast`, `value`).
 * `PV_FORECAST_BEFEHL`: ein Befehl ohne Shell, der die kWh-Zahl in die Standardsausgabe schreibt (15 s Timeout).
 
-Beide leer = das Feld wird nicht übertragen. Vor dem Senden prüft das Skript die Grenzen der API: eine Prognose ohne bekannte Anlagengröße und mehr als 10 kWh je kWp werden **nicht** gesendet, weil die API solche Messungen mit HTTP 422 verwirft.
+Alle Quellen leer = das Feld wird nicht übertragen. Vor dem Senden prüft das Skript die Grenzen der API: eine Prognose ohne bekannte Anlagengröße und mehr als 10 kWh je kWp werden **nicht** gesendet, weil die API solche Messungen mit HTTP 422 verwirft.
+
 
 ---
 
@@ -271,6 +307,10 @@ Das Skript sendet nur, wenn die API `HTTP 202` antwortet **und** die Antwort `ac
 | `Warnung: Ladezustand … unplausibel` | Kein Speicher oder Antwort außerhalb 0 bis 100 %, Feld wird weggelassen |
 | `Warnung: State-Datei … ist unlesbar` | State-Datei defekt; Min/Max/avg nur aus der aktuellen Stichprobe, Datei wird neu angelegt |
 | `Warnung: State-Datei … konnte nicht geschrieben werden` | `STATE_DATEI` nicht beschreibbar (bei systemd `StateDirectory` prüfen) |
+| `Warnung: Home Assistant … nicht abrufbar` | Token abgelaufen, HA nicht erreichbar, URL falsch; Sensor übersprungen, Messung wird trotzdem gesendet |
+| `Warnung: Sensor … meldet … – keine Zahl` | Sensor meldet `unavailable`/`unknown` (nachts), Feld wird weggelassen |
+| `Warnung: Sensor … hat Einheit … – keine bekannte Energieeinheit` | Sensor deklariert keine Energieeinheit in kWh/Wh/MWh (oft `W`), Feld wird weggelassen |
+| `Warnung: Sensor … ist … s alt` | Sensor hält einen veralteten Wert älter als `PV_FORECAST_MAX_AGE_S`, Feld wird weggelassen |
 | `Warnung: Prognosedatei … ist nicht lesbar` | `PV_FORECAST_DATEI` zeigt auf eine fehlende oder gesperrte Datei |
 | `Warnung: PV-Prognose … überschreitet …` | Prognose über 10 kWh je kWp, Feld wird weggelassen (API: HTTP 422) |
 | `RSCP-Verbindung … fehlgeschlagen` | Hauskraftwerk nicht erreichbar, RSCP-Schlüssel falsch, pye3dc-Version zu alt |

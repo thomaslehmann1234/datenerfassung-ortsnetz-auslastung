@@ -277,6 +277,7 @@ Das Python-Script liest die Phasenspannungen, die Netzfrequenz, die Netzleistung
 - Voraussetzungen: Python Host welcher Dauerhaft läuft und mit dem E3DC Hauskraftwerk im gleichen Subnetz ist und mit dem Internet kommunizieren kann. Automatisierung muss via cron der systemd gemacht werden.
 - Konfiguration: Zugangsdaten, Standort und optionale Kenngrößen stehen in einer `.env`-Datei (`.env.example`), nicht im Script. Der Netzzähler wird über den Typ `PM_TYPE_ROOT` gefunden, der Index ist konfigurierbar.
 - State-Datei: Die Stichproben des Übertragungsintervalls liegen in einer JSON-Datei (`STATE_DATEI`); der systemd-Dienst schreibt sie dank `StateDirectory` nach `/var/lib/ortsnetz-e3dc/state.json`.
+- PV-Prognose: pye3dc liefert keine, `pv_forecast_kwh` kommt aus Home Assistant (REST API: `PV_FORECAST_HA_URL`/`PV_FORECAST_HA_TOKEN`/`PV_FORECAST_HA_ENTITY`), aus einer Datei oder aus einem Befehl; Alters- und Plausibilitätsprüfung vor dem Senden.
 - Exit-Codes: 0 Stichprobe gespeichert oder gesendet, 1 Konfiguration, 2 RSCP, 3 Messung, 4 API – für cron-, systemd- und Monitoring-Auswertung.
 
 ## Loxone Miniserver

@@ -18,6 +18,9 @@ der letzten Annahme das Sendeintervall von 300 Sekunden vergangen ist. Aus den
 Stichproben desselben Intervalls werden die Min-, Max- und Durchschnittswerte der
 Spannungen und der Netzfrequenz gebildet.
 
+Die PV-Tagesprognose (pv_forecast_kwh) kommt aus Home Assistant (REST API), aus einer
+Datei oder aus einem Befehl; das Hauskraftwerk selbst kann sie nicht liefern.
+
 Die Konfiguration steht in Environment-Variablen oder in einer .env-Datei neben dem
 Script (siehe .env.example), nicht im Script selbst. Gesetzte Environment-Variablen
 haben Vorrang vor der .env-Datei.
@@ -84,9 +87,19 @@ PLANT_CAPACITY_KWP = None
 # Leer lassen = die installierte Kapazität des Kraftwerks als Näherung.
 BATTERY_CAPACITY_KWH = None
 
-# Optional: PV-Tagesprognose in kWh aus einer Datei (evcc, Home Assistant, ioBroker)
-# oder aus einem Befehl, der die kWh-Zahl in die Standardsausgabe schreibt.
-# Beides leer = pv_forecast_kwh wird nicht übertragen.
+# Optional: PV-Tagesprognose in kWh aus Home Assistant (REST API), aus einer Datei
+# (evcc, Home Assistant, ioBroker) oder aus einem Befehl, der die kWh-Zahl in die
+# Standardsausgabe schreibt. Alles leer = pv_forecast_kwh wird nicht übertragen.
+# Reihenfolge: Home Assistant, dann Datei, dann Befehl.
+PV_FORECAST_HA_URL = ""      # Basis-URL des Home Assistant, z. B. http://192.168.60.10:8123
+PV_FORECAST_HA_TOKEN = ""    # Long-lived Token, Scope "Read & Historical"
+PV_FORECAST_HA_ENTITY = ""   # Kommata-Liste der Sensoren, z. B. sensor.pv_prognose_sud,sensor.pv_prognose_west
+
+# Prognosewerte, die älter als diese Sekunden sind, werden nicht gesendet (nachts behält
+# ein Sensor den Abendwert). 0 schaltet die Altersprüfung ab.
+PV_FORECAST_MAX_AGE_S = 3600
+
+# Alternative Prognosequellen, wenn kein Home Assistant vorhanden ist.
 PV_FORECAST_DATEI = ""
 PV_FORECAST_BEFEHL = ""
 
@@ -105,7 +118,7 @@ SENDINTERVALL_S = 300
 ENV_DATEI = None
 
 API_URL = "https://www.ortsnetz-auslastung.de/v1/measurements"
-INTEGRATION_VERSION = "e3dc-rscp-1.2"
+INTEGRATION_VERSION = "e3dc-rscp-1.3"
 
 # Maximale Laufzeit eines Aufrufs in Sekunden. Die RSCP-Timeouts begrenzen nur einzelne
 # Netzwerkoperationen; eine halb offene Verbindung würde den cron-/systemd-Lauf sonst
@@ -135,6 +148,12 @@ MAX_STICHPROBEN = 40
 
 # Bezeichnung, wenn das Kraftwerk kein Modell nennen kann
 AUSWICH_MODELL = "E3/DC Hauskraftwerk"
+
+# Einheiten der Prognosesensoren in kWh; fehlende oder unbekannte Einheit wird nicht geraten
+EINHEITEN = {"kWh": 1.0, "kwh": 1.0, "KWH": 1.0, "Wh": 0.001, "wh": 0.001, "MWh": 1000.0, "GWh": 1000000.0}
+
+# Zeit eines Home-Assistant-Abfrufs in Sekunden
+HA_TIMEOUT_S = 15
 
 # Zählertyp des Netzzählers, in allen pye3dc-Versionen gleich lautender Name
 WURZEL_TYP = "PM_TYPE_ROOT"
@@ -261,6 +280,8 @@ def konfiguration_laden():
     global E3DC_HOST, E3DC_USERNAME, E3DC_PASSWORD, RSCP_KEY
     global LATITUDE, LONGITUDE, METER_INDEX, PLANT_CAPACITY_KWP
     global BATTERY_CAPACITY_KWH, PV_FORECAST_DATEI, PV_FORECAST_BEFEHL
+    global PV_FORECAST_HA_URL, PV_FORECAST_HA_TOKEN, PV_FORECAST_HA_ENTITY
+    global PV_FORECAST_MAX_AGE_S
     global SMARTMETER_MODEL, STATE_DATEI, SENDINTERVALL_S
 
     E3DC_HOST = einstellung("E3DC_HOST", E3DC_HOST)
@@ -272,11 +293,39 @@ def konfiguration_laden():
     METER_INDEX = einstellung("METER_INDEX", METER_INDEX, int)
     PLANT_CAPACITY_KWP = einstellung("PLANT_CAPACITY_KWP", PLANT_CAPACITY_KWP, float)
     BATTERY_CAPACITY_KWH = einstellung("BATTERY_CAPACITY_KWH", BATTERY_CAPACITY_KWH, float)
+    PV_FORECAST_HA_URL = einstellung("PV_FORECAST_HA_URL", PV_FORECAST_HA_URL)
+    PV_FORECAST_HA_TOKEN = einstellung("PV_FORECAST_HA_TOKEN", PV_FORECAST_HA_TOKEN)
+    PV_FORECAST_HA_ENTITY = einstellung("PV_FORECAST_HA_ENTITY", PV_FORECAST_HA_ENTITY)
+    PV_FORECAST_MAX_AGE_S = einstellung("PV_FORECAST_MAX_AGE_S", PV_FORECAST_MAX_AGE_S, int)
     PV_FORECAST_DATEI = einstellung("PV_FORECAST_DATEI", PV_FORECAST_DATEI)
     PV_FORECAST_BEFEHL = einstellung("PV_FORECAST_BEFEHL", PV_FORECAST_BEFEHL)
     SMARTMETER_MODEL = einstellung("SMARTMETER_MODEL", SMARTMETER_MODEL)
     STATE_DATEI = einstellung("STATE_DATEI", STATE_DATEI)
     SENDINTERVALL_S = einstellung("SENDINTERVALL_S", SENDINTERVALL_S, int)
+
+
+def prognose_quellen_pruefen():
+    """Prüft die Home-Assistant-Prognosequelle, nur wenn Sensoren gesetzt sind."""
+    if PV_FORECAST_MAX_AGE_S < 0:
+        raise KonfigurationsFehler("PV_FORECAST_MAX_AGE_S darf nicht negativ sein.")
+    if not PV_FORECAST_HA_ENTITY:
+        return
+    entities = [e.strip() for e in PV_FORECAST_HA_ENTITY.split(",") if e.strip()]
+    if not entities:
+        raise KonfigurationsFehler("PV_FORECAST_HA_ENTITY enthält keine Sensor-Identifikation.")
+    for entity in entities:
+        if "." not in entity:
+            raise KonfigurationsFehler(
+                f"PV_FORECAST_HA_ENTITY: {entity!r} ist keine Sensor-Identifikation "
+                "sensor.name / number.name.")
+    if not PV_FORECAST_HA_URL.lower().startswith(("http://", "https://")):
+        raise KonfigurationsFehler(
+            "PV_FORECAST_HA_URL muss mit http:// oder https:// beginnen, "
+            "z. B. http://192.168.60.10:8123.")
+    if not PV_FORECAST_HA_TOKEN:
+        raise KonfigurationsFehler(
+            "PV_FORECAST_HA_TOKEN fehlt: für die Prognose aus Home Assistant wird ein "
+            "Long-lived Token mit Scope Read & Historical benötigt.")
 
 
 def konfiguration_pruefen():
@@ -297,6 +346,7 @@ def konfiguration_pruefen():
     if SENDINTERVALL_S < 300:
         raise KonfigurationsFehler(
             "SENDINTERVALL_S darf nicht kleiner als 300 Sekunden sein (Sendeintervall der API).")
+    prognose_quellen_pruefen()
 
 
 def state_pfad():
@@ -592,40 +642,142 @@ def zaehlerbezeichnung(e3dc):
     return " ".join(anteile)[:120]
 
 
-def pv_forecast_lesen(kapazitaet):
-    """Liefert pv_forecast_kwh aus Prognosedatei oder Prognosebefehl, sonst None.
+def zahl_von_wert(wert):
+    """Liefert eine HA-Sensorangabe als Zahl; HA meldet den Zustand als Text."""
+    if isinstance(wert, str):
+        return zahl_aus_text(wert)
+    return zahl(wert)
+
+
+def einheit_faktor(einheit):
+    """Liefert den Faktor nach kWh für die Sensor-Einheit, sonst None.
+
+    Es wird nie geraten: ein Sensor ohne `unit_of_measurement` oder mit einer
+    Leistung (W) statt einer Energie (Wh) wird übersprungen.
+    """
+    if einheit is None:
+        return None
+    return EINHEITEN.get(str(einheit).strip())
+
+
+def zeitpunkt_aus_iso(text):
+    """Liefert den Unix-Zeitpunkt einer ISO-Zeit aus Home Assistant, sonst None.
+
+    Python 3.8 akzeptiert das `Z` in `…T08:00:00Z` nicht, es wird durch `+00:00`
+    ersetzt. Zeiten ohne Zeitzone gelten als UTC.
+    """
+    if not isinstance(text, str):
+        return None
+    text = text.strip().replace("Z", "+00:00")
+    try:
+        zeit = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if zeit.tzinfo is None:
+        zeit = zeit.replace(tzinfo=timezone.utc)
+    return int(zeit.timestamp())
+
+
+def ha_abfragen(entity):
+    """Liefert die Sensorantwort von Home Assistant als dict, sonst None."""
+    pfad = PV_FORECAST_HA_URL.rstrip("/") + f"/api/states/{entity}"
+    anfrage = urllib.request.Request(
+        pfad,
+        headers={"Authorization": f"Bearer {PV_FORECAST_HA_TOKEN}",
+                 "User-Agent": "E3DC-Ortsnetz-Client"},
+    )
+    try:
+        with urllib.request.urlopen(anfrage, timeout=HA_TIMEOUT_S) as antwort:
+            daten = json.loads(antwort.read().decode("utf-8", errors="replace"))
+    except Exception as fehler:
+        log(f"Warnung: Home Assistant {entity} nicht abrufbar ({fehler}).")
+        return None
+    if not isinstance(daten, dict):
+        log(f"Warnung: Home Assistant {entity} antwortet ohne Sensorobjekt.")
+        return None
+    return daten
+
+
+def pv_forecast_ha():
+    """Liefert die Summe der Prognosesensoren in kWh, sonst None.
+
+    Jeder Sensor wird einzeln geprüft: Zahl, bekannte Energieeinheit, Alter.
+    Ein Sensor, der `unavailable` meldet (nachts) oder einen veralteten Wert hält,
+    wird übersprungen, die Messung selbst wird trotzdem übertragen.
+    """
+    entities = [e.strip() for e in PV_FORECAST_HA_ENTITY.split(",") if e.strip()]
+    gesamt = None
+    for entity in entities:
+        daten = ha_abfragen(entity)
+        if daten is None:
+            continue
+
+        wert = zahl_von_wert(daten.get("state"))
+        if wert is None:
+            log(f"Warnung: Sensor {entity} meldet {daten.get('state')!r} – keine Zahl, Prognose ignoriert.")
+            continue
+
+        einheit = (daten.get("attributes") or {}).get("unit_of_measurement")
+        faktor = einheit_faktor(einheit)
+        if faktor is None:
+            log(f"Warnung: Sensor {entity} hat Einheit {einheit!r} – keine bekannte Energieeinheit "
+                "(Sensor muss unit_of_measurement: kWh melden), Prognose ignoriert.")
+            continue
+
+        zeit = zeitpunkt_aus_iso(daten.get("last_reported") or daten.get("last_updated"))
+        if PV_FORECAST_MAX_AGE_S > 0:
+            if zeit is None:
+                log(f"Warnung: Sensor {entity} nennt keine Zeit – Alter nicht prüfbar, Prognose ignoriert.")
+                continue
+            alter = jetzt() - zeit
+            if alter > PV_FORECAST_MAX_AGE_S:
+                log(f"Warnung: Sensor {entity} ist {alter} s alt (max. {PV_FORECAST_MAX_AGE_S} s) – Prognose ignoriert.")
+                continue
+
+        kwh = wert * faktor
+        gesamt = kwh if gesamt is None else gesamt + kwh
+    if gesamt is None:
+        return None
+    return round(gesamt, 1)
+
+
+def pv_forecast_datei():
+    """Liefert die Prognose in kWh aus PV_FORECAST_DATEI, sonst None."""
+    try:
+        with open(PV_FORECAST_DATEI, "r", encoding="utf-8") as objekt:
+            wert = zahl_aus_text(objekt.read())
+    except OSError as fehler:
+        log(f"Warnung: Prognosedatei {PV_FORECAST_DATEI} ist nicht lesbar ({fehler}).")
+        return None
+    if wert is None:
+        log(f"Warnung: Prognosedatei {PV_FORECAST_DATEI} nennt keine kWh-Zahl – pv_forecast_kwh weggelassen.")
+    return wert
+
+
+def pv_forecast_befehl():
+    """Liefert die Prognose in kWh aus PV_FORECAST_BEFEHL, sonst None."""
+    try:
+        ablauf = subprocess.run(shlex.split(PV_FORECAST_BEFEHL), capture_output=True,
+                                text=True, timeout=15)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as fehler:
+        log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} fehlgeschlagen ({fehler}).")
+        return None
+    if ablauf.returncode != 0:
+        log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} mit Exit {ablauf.returncode}.")
+        return None
+    wert = zahl_aus_text(ablauf.stdout)
+    if wert is None:
+        log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} nennt keine kWh-Zahl – pv_forecast_kwh weggelassen.")
+    return wert
+
+
+def prognose_pruefen(wert, kapazitaet):
+    """Prüft die Prognose gegen die API-Grenzen und liefert sie, sonst None.
 
     Die API verlangt eine gespeicherte oder mitgesendete Anlagengröße und verwirft bei
     mehr als 10 kWh je kWp pro Tag die gesamte Messung mit HTTP 422. Deshalb wird ein
     Wert ohne Anlagengröße oder über der Grenze gar nicht erst gesendet.
     """
-    wert = None
-    quelle = None
-    if not PV_FORECAST_DATEI and not PV_FORECAST_BEFEHL:
-        return None
-    if PV_FORECAST_DATEI:
-        quelle = PV_FORECAST_DATEI
-        try:
-            with open(PV_FORECAST_DATEI, "r", encoding="utf-8") as objekt:
-                wert = zahl_aus_text(objekt.read())
-        except OSError as fehler:
-            log(f"Warnung: Prognosedatei {PV_FORECAST_DATEI} ist nicht lesbar ({fehler}).")
-            return None
-    elif PV_FORECAST_BEFEHL:
-        quelle = PV_FORECAST_BEFEHL
-        try:
-            ablauf = subprocess.run(shlex.split(PV_FORECAST_BEFEHL), capture_output=True,
-                                    text=True, timeout=15)
-        except (OSError, ValueError, subprocess.TimeoutExpired) as fehler:
-            log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} fehlgeschlagen ({fehler}).")
-            return None
-        if ablauf.returncode != 0:
-            log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} mit Exit {ablauf.returncode}.")
-            return None
-        wert = zahl_aus_text(ablauf.stdout)
-    if wert is None:
-        log(f"Warnung: Prognosequelle {quelle} nennt keine kWh-Zahl – pv_forecast_kwh weggelassen.")
-        return None
     wert = round(wert, 1)
     if not 0 <= wert <= 100000:
         log(f"Warnung: PV-Prognose {wert} kWh ist außerhalb von 0 bis 100000 – weggelassen.")
@@ -638,6 +790,19 @@ def pv_forecast_lesen(kapazitaet):
         log(f"Warnung: PV-Prognose {wert} kWh überschreitet {grenze} kWh (10 kWh je kWp) – weggelassen.")
         return None
     return wert
+
+
+def pv_forecast_lesen(kapazitaet):
+    """Liefert pv_forecast_kwh: Home Assistant zuerst, dann Datei, dann Befehl, sonst None."""
+    wert = pv_forecast_ha() if PV_FORECAST_HA_ENTITY else None
+    if wert is None:
+        if PV_FORECAST_DATEI:
+            wert = pv_forecast_datei()
+        elif PV_FORECAST_BEFEHL:
+            wert = pv_forecast_befehl()
+    if wert is None:
+        return None
+    return prognose_pruefen(wert, kapazitaet)
 
 
 def messdaten_flach(daten):

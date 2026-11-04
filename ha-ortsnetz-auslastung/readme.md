@@ -51,6 +51,38 @@ Jeder Messwert wird einzeln geprüft. Übernommen wird er nur, wenn der Sensor e
 
 Die Altersprüfung verhindert, dass ein abgeschalteter Mikrowechselrichter morgens und abends seinen letzten Wert weiter liefert. Meldet eine Integration unveränderte Werte nicht neu und gilt deshalb fälschlich als veraltet, schaltet `max_age_minutes: 0` die Prüfung ab.
 
+## Prognose-Sensor für die E3/DC-Integration
+
+Die E3/DC-Integration (`e3dc-ortsnetz-auslastung/`) liest die PV-Tagesprognose direkt aus Home Assistant über die REST API, sie braucht dafür keinen `rest_command`. Home Assistant bleibt dabei die Quelle der Prognose, das E3/DC-Skript sendet die Messung – die Automatisierung dieses Ordners sendet dieselbe Messung nicht ein zweites Mal, also nur **eine** der beiden Installationen einrichten.
+
+Vorbereitung in Home Assistant:
+
+1. Einen Sensor mit der Prognose in **kWh** bereitstellen, z. B. aus Solar Forecast (`sensor.solar_forecast_production_today` meldet Wh):
+
+   ```yaml
+   template:
+     - sensor:
+         - name: pv_prognose_today_kwh
+           unit_of_measurement: "kWh"
+           state: >-
+             {{ ((states('sensor.solar_forecast_production_today') | float(0)) / 1000) | round(1) }}
+   ```
+
+   `unit_of_measurement: "kWh"` ist Pflicht: das E3/DC-Skript rechnet nur `kWh`, `Wh` und `MWh` und rät bei einer fehlenden oder unbekannten Einheit nicht, insbesondere nicht bei `W`.
+
+2. Token anlegen: *Benutzerprofil → Langzeit-Sicherheitstoken* („Langzeit“), Rolle mit Lesezugriff. Der Token wird im E3/DC-Skript in der `.env` eingetragen, nie in einer Crontab oder einem Befehl.
+
+Eintrag in der `.env` des E3/DC-Skripts:
+
+```
+PV_FORECAST_HA_URL=http://192.168.60.10:8123
+PV_FORECAST_HA_TOKEN=<langzeit-token>
+PV_FORECAST_HA_ENTITY=sensor.pv_prognose_today_kwh
+PV_FORECAST_MAX_AGE_S=3600
+```
+
+Mehrere Sensoren werden als Kommata-Liste addiert (Ost und West je Teilanlage). `unavailable`, `unknown` und Werte älter als `PV_FORECAST_MAX_AGE_S` Sekunden überspringt das Skript, es sendet die Messung dann ohne `pv_forecast_kwh` – Home Assistant muss für die Prognose also nichts weiter einrichten.
+
 ## Tests
 
 Mit installiertem Home Assistant und PyYAML prüft `python3 test_templates.py` die beiden YAML-Dateien gegen die Home-Assistant-Schemas und kontrolliert, dass Definition und Aufruf denselben Aktionsnamen verwenden.
