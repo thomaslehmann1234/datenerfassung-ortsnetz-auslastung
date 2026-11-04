@@ -37,7 +37,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | Integration | Datenquelle | Laufzeit | Übertragung | Geeignet für |
 | --- | --- | --- | --- | --- |
 | [Shelly Pro 3EM und Pro EM50](#shelly-pro-3em-und-pro-em50) | Direkte Spannungsmessung | Shelly Script | HTTPS | Shelly-Installationen |
-| [SMA Sunny Home Manager 2.0 und Energy Meter](#sma-sunny-home-manager-20-und-energy-meter) | Speedwire-Multicast (EMETER-Protokoll) | Python / systemd / Docker | HTTPS | SMA-Anlagen mit Sunny Home Manager 2.0 oder Energy Meter |
+| [SMA Sunny Home Manager 2.0 und Energy Meter](#sma-sunny-home-manager-20-und-energy-meter) | Speedwire-Multicast (EMETER-Protokoll) | Python / systemd / Docker / TrueNAS SCALE | HTTPS | SMA-Anlagen mit Sunny Home Manager 2.0 oder Energy Meter |
 | [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf) | Optische Smart-Meter-Schnittstelle | ESP32 / Tasmota Script | HTTPS / WebQuery | SML-fähige Stromzähler |
 | [Home Assistant](#home-assistant) | Vorhandene Spannungssensoren | Home Assistant / HACS | HTTPS | Home-Assistant-Installationen |
 | [ioBroker](#iobroker) | Vorhandene Spannungsdatenpunkte | ioBroker JavaScript | HTTPS | ioBroker-Installationen |
@@ -73,13 +73,13 @@ Vor dem Aktivieren Breitengrad und Längengrad konfigurieren.
 
 ## SMA Sunny Home Manager 2.0 und Energy Meter
 
-Das Python-Script empfängt die Speedwire-Multicast-Telegramme des Sunny Home Manager 2.0 oder SMA Energy Meter direkt aus dem lokalen Netz und dekodiert L1, L2, L3 sowie die Netzfrequenz, sofern vorhanden. Es läuft auf einem dauerhaft eingeschalteten Rechner und benötigt keinen Sunny-Portal-Zugang zum Auslesen.
+Das Python-Script empfängt die Speedwire-Multicast-Telegramme des Sunny Home Manager 2.0 oder SMA Energy Meter direkt aus dem lokalen Netz und dekodiert L1, L2, L3 sowie die Netzfrequenz, sofern vorhanden. Es läuft auf einem dauerhaft eingeschalteten Rechner und benötigt keinen Sunny-Portal-Zugang zum Auslesen. Im Dauerbetrieb sendet es zusätzlich Minimum, Maximum und Mittelwert der Spannungen über das 5-Minuten-Intervall. Liefert der Zähler keine Netzfrequenz (Energy Meter), kann sie optional aus einer externen Quelle kommen, z. B. einer sonnenBatterie.
 
 - Ordner: [`sma-shm2-ortsnetz-auslastung`](sma-shm2-ortsnetz-auslastung)
 - Script: [`ortsnetz-sma-shm2.py`](sma-shm2-ortsnetz-auslastung/ortsnetz-sma-shm2.py)
 - Voraussetzungen: Linux-Rechner mit Python ab 3.8 im selben Layer-2-Netz wie der Zähler und Internetzugang
 
-Ohne eigens eingerichtete Weiterleitung bleibt Multicast im lokalen Netz; bei mehreren Interfaces die Interface-IP im Zähler-Netz konfigurieren. Empfang zuerst mit `--dry-run` prüfen. Details stehen in der [SMA-README](sma-shm2-ortsnetz-auslastung/README.md).
+Ohne eigens eingerichtete Weiterleitung bleibt Multicast im lokalen Netz; bei mehreren Interfaces die Interface-IP im Zähler-Netz konfigurieren. Empfang zuerst mit `--dry-run` prüfen. Details stehen in der [SMA-README](sma-shm2-ortsnetz-auslastung/README.md). Für TrueNAS SCALE gibt es dort eine Anleitung als Custom App ohne eigenes Image: [TrueNAS SCALE (Custom App)](sma-shm2-ortsnetz-auslastung/README.md#truenas-scale-custom-app).
 
 ## Tasmota SML-Lesekopf
 
