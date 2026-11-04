@@ -163,7 +163,7 @@ python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py --dry-run
 }
 ```
 
-Die Unit-Tests laufen ohne Hauskraftwerk: `python3 test_e3dc.py`
+Die Unit-Tests laufen ohne Hauskraftwerk: `python3 test_e3dc.py` (Einzelheiten im Abschnitt [Tests](#-tests))
 
 ---
 
@@ -243,6 +243,7 @@ PV_FORECAST_MAX_AGE_S=3600
 `PV_FORECAST_MAX_AGE_S` auf die Aktualisierungsfrequenz der Quelle stellen: stündliche Quellen passen zu 3600. **Solcast** aktualisiert nur wenige Male am Tag (Lücken von 4–6 h); mit 3600 fiele die Prognose tagsüber meist weg, hier sind 21600 der passende Wert.
 
 * Der Aufruf ist `GET /api/states/<entity>` mit `Authorization: Bearer …`, 15 s Timeout je Sensor. Mehrere Sensoren werden **addiert**, für eine Ost/West-Anlage also ein Sensor je Teilanlage.
+* `https://` setzt ein von Python vertrauenswürdiges Zertifikat voraus (`urllib` prüft es); ein selbstsigniertes Home-Assistant-Zertifikat lässt die Prognose still wegfallen – die Warnung im Log ist dann der einzige Hinweis. `http://` im Heimnetz funktioniert ohne Zertifikat.
 * Der Sensor muss **Energie in kWh** melden (`unit_of_measurement: "kWh"`). `Wh` und `MWh` werden umgerechnet; eine fehlende oder unbekannte Einheit (besonders `W`, also Leistung) wird **nicht geraten**, der Sensor übersprungen. Ein Template-Sensor in kWh:
 
   ```yaml
@@ -257,7 +258,7 @@ PV_FORECAST_MAX_AGE_S=3600
 * Das Alter wird über `last_reported` (ersatzweise `last_updated`) geprüft. Nachts behält ein Sensor den Abendwert; ein Wert älter als `PV_FORECAST_MAX_AGE_S` Sekunden wird übersprungen. `unavailable` und `unknown` (nachts) ebenfalls.
 * Token in der `.env` mit `chmod 600`, nie als Befehlsargument und nie ins Log.
 * Ein Sensorausfall überschreibt die Messung nicht: das Skript warnt und sendet die Messung ohne `pv_forecast_kwh` (Exit-Code `0`).
-* Bei mehreren Sensoren und 15 s Timeout je Sensor bleiben bei drei Sensoren noch rund 15 s für Hauskraftwerk und API innerhalb der 60 s Laufzeit.
+* Bei mehreren Sensoren und 15 s Timeout je Sensor bleiben bei drei Sensoren noch rund 75 s für Hauskraftwerk und API innerhalb der 120 s Laufzeit (`MAX_LAUFZEIT_S`).
 
 ### Prognose aus Datei oder Befehl
 
@@ -340,9 +341,27 @@ Das Skript sendet nur, wenn die API `HTTP 202` antwortet **und** die Antwort `ac
 3. **Stichprobe:** Spannungen L1, L2, L3 und Netzfrequenz lesen, Form älterer und neuerer pye3dc-Versionen normalisieren; Netzleistung (`EMS_REQ_POWER_GRID`) und Ladezustand (`EMS_REQ_BAT_SOC`) abfragen.
 4. **Plausibilitätsprüfung:** Spannungen 150 bis 300 V, Frequenz 45 bis 55 Hz, Netzleistung ±60 kW, Ladezustand 0 bis 100 %.
 5. **State-Datei:** Stichprobe anhängen, Altlasten verwerfen, atomar schreiben.
-6. **Sende-Gating:** nur senden, wenn seit der letzten Annahme `SENDINTERVALL_S` Sekunden vergangen sind.
+6. **Sende-Gating:** nur senden, wenn seit der letzten Annahme `SENDINTERVALL_S` Sekunden vergangen sind; vor dem Senden die Zufallsverzögerung `SENDEZUFALL_S` (nur Sendeläufe, `observed_at` und Kennzahlenfenster bleiben unverändert).
 7. **Payload:** Min, Max und Mittelwert aus den Stichproben des Intervalls; statische Angaben aus den Systemangaben des Kraftwerks; Prognose aus der externen Quelle.
 8. **Übertragung:** HTTP POST (JSON) an `https://www.ortsnetz-auslastung.de/v1/measurements`, Antwortfelder ins Log, Exit-Code je Ergebnis.
+
+---
+
+## 🧪 Tests
+
+`python3 test_e3dc.py` läuft ohne Hauskraftwerk, ohne Netzwerk und ohne installiertes pye3dc:
+ein `FakeE3DC` ersetzt die RSCP-Abfragen, die Home-Assistant- und API-Aufrufe sind gepatcht.
+134 Fälle decken ab:
+
+* Zählerauswahl nach Typ `PM_TYPE_ROOT`, `METER_INDEX` und alte pye3dc-Datenstruktur
+* Netzfrequenz über `PVI_REQ_AC_FREQUENCY` und ihre Plausibilitätsgrenzen
+* Kennzahlen über das Intervall (`min ≤ avg ≤ max`, Runden, 300-s-Fenster, Altlasten, Kappen)
+* State-Datei: Pfad (XDG und `STATE_DATEI`), Roundtrip, atomares Schreiben, Ordner `0700`, unlesbare Datei
+* Sende-Gating über sechs Minutentakte und die Zufallsverzögerung `SENDEZUFALL_S` (nur Sendeläufe, Grenzen, `0` = aus)
+* Payload: alle Felder, `-1` für nicht gemessene Phasen, Vorzeichen der Netzleistung, Kapazitäten, Bezeichnung ohne Seriennummer, Overrides, 120-Zeichen-Kürzung
+* Prognosequellen: Datei, Befehl, Home Assistant (Einheit, Alter, Sensorausfall, Summe mehrerer Sensoren), 10-kWh/kWp-Grenze
+* API-Antwort: Ampel, Speicherladeempfehlung, Redispatch, fehlende Felder
+* Exit-Codes und `--dry-run`
 
 ---
 

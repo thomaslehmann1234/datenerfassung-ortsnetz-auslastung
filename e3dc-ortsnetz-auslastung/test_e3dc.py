@@ -1022,6 +1022,13 @@ class KonfigurationTests(unittest.TestCase):
             with self.assertRaises(MODULE.KonfigurationsFehler):
                 MODULE.konfiguration_pruefen()
 
+    def test_sendeversatz_grenze(self):
+        with patch.dict("os.environ", umgebung(SENDEZUFALL_S="120"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            MODULE.konfiguration_pruefen()
+        self.assertEqual(MODULE.SENDEZUFALL_S, 120, "120 s sind die erlaubte Grenze")
+
 
 class SendeTests(unittest.TestCase):
     payload = {"observed_at": "2026-09-15T08:00:00Z", "latitude": 48.1, "longitude": 11.7,

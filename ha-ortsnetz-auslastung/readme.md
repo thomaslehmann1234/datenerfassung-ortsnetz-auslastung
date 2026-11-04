@@ -83,6 +83,8 @@ PV_FORECAST_MAX_AGE_S=3600
 
 Mehrere Sensoren werden als Kommata-Liste addiert (Ost und West je Teilanlage). `unavailable`, `unknown` und Werte älter als `PV_FORECAST_MAX_AGE_S` Sekunden überspringt das Skript, es sendet die Messung dann ohne `pv_forecast_kwh` – Home Assistant muss für die Prognose also nichts weiter einrichten.
 
+`PV_FORECAST_MAX_AGE_S` auf die Aktualisierungsfrequenz der Quelle stellen: stündlich aktualisierte Sensoren passen zu 3600. **Solcast**-Sensoren aktualisieren nur wenige Male am Tag (Lücken von 4–6 h), für sie ist `PV_FORECAST_MAX_AGE_S=21600` der passende Wert – mit 3600 fiele die Prognose tagsüber meist weg.
+
 ## Tests
 
 Mit installiertem Home Assistant und PyYAML prüft `python3 test_templates.py` die beiden YAML-Dateien gegen die Home-Assistant-Schemas und kontrolliert, dass Definition und Aufruf denselben Aktionsnamen verwenden.
