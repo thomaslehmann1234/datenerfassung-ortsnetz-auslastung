@@ -14,9 +14,10 @@ Aufruf:
 
 Das Script wird im Minutentablauf gestartet (cron oder systemd-Timer). Jede Laufzeit
 liest eine Stichprobe und hängt sie an die State-Datei. Gesendet wird erst, wenn seit
-der letzten Annahme das Sendeintervall von 300 Sekunden vergangen ist. Aus den
-Stichproben desselben Intervalls werden die Min-, Max- und Durchschnittswerte der
-Spannungen und der Netzfrequenz gebildet.
+der letzten Annahme das Sendeintervall von 300 Sekunden vergangen ist, und nach einer
+Zufallsverzögerung (SENDEZUFALL_S), damit nicht alle Integrationen zur vollen Minute
+gleichzeitig auf die API treffen. Aus den Stichproben desselben Intervalls werden die
+Min-, Max- und Durchschnittswerte der Spannungen und der Netzfrequenz gebildet.
 
 Die PV-Tagesprognose (pv_forecast_kwh) kommt aus Home Assistant (REST API), aus einer
 Datei oder aus einem Befehl; das Hauskraftwerk selbst kann sie nicht liefern.
@@ -39,6 +40,7 @@ import http.client
 import json
 import math
 import os
+import random
 import re
 import shlex
 import signal
@@ -114,6 +116,11 @@ STATE_DATEI = ""
 # Sendeintervall in Sekunden. Die API erwartet 300, kürzer darf es nicht sein.
 SENDINTERVALL_S = 300
 
+# Zufallsverzögerung vor dem Senden in Sekunden. Alle Integrationen werden per Timer auf
+# die vollen Minuten ausgelöst; ohne Verzögerung treffen alle Messungen gleichzeitig auf
+# die API. 0 schaltet die Verzögerung aus. Nur auf Sendeläufen, nie auf Stichprobenläufen.
+SENDEZUFALL_S = 60
+
 # Alternative .env-Datei (Environment-Variable ENV_DATEI), Standard ist .env neben dem Script
 ENV_DATEI = None
 
@@ -122,8 +129,9 @@ INTEGRATION_VERSION = "e3dc-rscp-1.4"
 
 # Maximale Laufzeit eines Aufrufs in Sekunden. Die RSCP-Timeouts begrenzen nur einzelne
 # Netzwerkoperationen; eine halb offene Verbindung würde den cron-/systemd-Lauf sonst
-# beliebig lange offenhalten.
-MAX_LAUFZEIT_S = 60
+# beliebig lange offenhalten. Der Wert muss die Zufallsverzögerung vor dem Senden
+# (SENDEZUFALL_S) und die Netzwerkzeiten aufnehmen.
+MAX_LAUFZEIT_S = 120
 
 # =======================================================================
 
@@ -282,7 +290,7 @@ def konfiguration_laden():
     global BATTERY_CAPACITY_KWH, PV_FORECAST_DATEI, PV_FORECAST_BEFEHL
     global PV_FORECAST_HA_URL, PV_FORECAST_HA_TOKEN, PV_FORECAST_HA_ENTITY
     global PV_FORECAST_MAX_AGE_S
-    global SMARTMETER_MODEL, STATE_DATEI, SENDINTERVALL_S
+    global SMARTMETER_MODEL, STATE_DATEI, SENDINTERVALL_S, SENDEZUFALL_S
 
     E3DC_HOST = einstellung("E3DC_HOST", E3DC_HOST)
     E3DC_USERNAME = einstellung("E3DC_USERNAME", E3DC_USERNAME)
@@ -302,6 +310,7 @@ def konfiguration_laden():
     SMARTMETER_MODEL = einstellung("SMARTMETER_MODEL", SMARTMETER_MODEL)
     STATE_DATEI = einstellung("STATE_DATEI", STATE_DATEI)
     SENDINTERVALL_S = einstellung("SENDINTERVALL_S", SENDINTERVALL_S, int)
+    SENDEZUFALL_S = einstellung("SENDEZUFALL_S", SENDEZUFALL_S, int)
 
 
 def prognose_quellen_pruefen():
@@ -346,6 +355,9 @@ def konfiguration_pruefen():
     if SENDINTERVALL_S < 300:
         raise KonfigurationsFehler(
             "SENDINTERVALL_S darf nicht kleiner als 300 Sekunden sein (Sendeintervall der API).")
+    if not 0 <= SENDEZUFALL_S <= 120:
+        raise KonfigurationsFehler(
+            "SENDEZUFALL_S muss zwischen 0 und 120 Sekunden liegen (0 = keine Verzögerung).")
     prognose_quellen_pruefen()
 
 
@@ -432,6 +444,22 @@ def senden_faellig(last_send, zeitpunkt):
     if last_send is None:
         return True
     return zeitpunkt - last_send >= SENDINTERVALL_S
+
+
+def sendeverzoegern():
+    """Wartet eine zufällige Zeit vor dem Senden.
+
+    Alle Integrationen des Repos werden per Timer auf die vollen Minuten ausgelöst.
+    Ohne Verzögerung treffen die Messungen aller Messquellen gleichzeitig auf die API.
+    Die Stichproben-Zeitstempel und das Intervall bleiben unberührt; last_send wird erst
+    nach der Annahme gesetzt.
+    """
+    if SENDEZUFALL_S <= 0:
+        return
+    wartezeit = random.randint(0, SENDEZUFALL_S)
+    if wartezeit:
+        log(f"Sendeversatz: warte {wartezeit} s, damit nicht alle Quellen gleichzeitig senden.")
+        time.sleep(wartezeit)
 
 
 def typname(eintrag):
@@ -1028,6 +1056,8 @@ def main(argv=None):
         rest = SENDINTERVALL_S - (zeitpunkt - (staat["last_send"] or zeitpunkt))
         log(f"Stichprobe gespeichert, Senden erst in {max(rest, 0)} s.")
         return 0
+
+    sendeverzoegern()
 
     try:
         senden(payload)

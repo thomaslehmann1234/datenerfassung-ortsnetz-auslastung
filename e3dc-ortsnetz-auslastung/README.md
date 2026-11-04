@@ -2,7 +2,7 @@
 
 Dieses Python-Skript liest die Phasenspannungen (L1, L2, L3), die Netzfrequenz, die Netzleistung am Hausanschluss und den Ladezustand des Speichers lokal über das RSCP-Protokoll von einem E3/DC-Hauskraftwerk und sendet die Messwerte an das Projekt **Ortsnetz-Auslastung** (`ortsnetz-auslastung.de`).
 
-Das Skript läuft im **Minutentakt**: jeder Aufruf liest eine Stichprobe, hängt sie an die State-Datei und endet mit einem Exit-Code, den cron, systemd und Monitoring auswerten können. Gesendet wird erst, wenn seit der letzten Annahme das Sendeintervall von 300 Sekunden vergangen ist – also alle fünf Minuten. Aus den Stichproben dieses Intervalls werden die Min-, Max- und Durchschnittswerte der Spannungen und der Netzfrequenz gebildet.
+Das Skript läuft im **Minutentakt**: jeder Aufruf liest eine Stichprobe, hängt sie an die State-Datei und endet mit einem Exit-Code, den cron, systemd und Monitoring auswerten können. Gesendet wird erst, wenn seit der letzten Annahme das Sendeintervall von 300 Sekunden vergangen ist – also alle fünf Minuten – und nach einer zusätzlichen Zufallsverzögerung von bis zu 60 Sekunden, damit nicht alle Integrationen zur vollen Minute gleichzeitig auf die API treffen. Aus den Stichproben dieses Intervalls werden die Min-, Max- und Durchschnittswerte der Spannungen und der Netzfrequenz gebildet.
 
 ---
 
@@ -46,11 +46,12 @@ Zugangsdaten und Standort stehen in einer `.env`-Datei oder in Environment-Varia
 | `PV_FORECAST_HA_URL` | – | Basis-URL des Home Assistant, z. B. `http://192.168.60.10:8123`; nur für die Prognose |
 | `PV_FORECAST_HA_TOKEN` | – | Long-lived Token mit Scope *Read & Historical* für die Prognose aus Home Assistant |
 | `PV_FORECAST_HA_ENTITY` | – | Kommata-Liste der Prognosesensoren, z. B. `sensor.pv_prognose_sud,sensor.pv_prognose_west` |
-| `PV_FORECAST_MAX_AGE_S` | – | Prognosewerte älter als diese Sekunden werden nicht gesendet, Standard 3600; `0` schaltet die Altersprüfung ab |
+| `PV_FORECAST_MAX_AGE_S` | – | Prognosewerte älter als diese Sekunden werden nicht gesendet, Standard 3600; `0` schaltet die Altersprüfung ab. Für Solcast-Sensoren 21600 empfehlen |
 | `PV_FORECAST_DATEI` | – | Datei mit der PV-Tagesprognose in kWh (evcc, Home Assistant, ioBroker) |
 | `PV_FORECAST_BEFEHL` | – | Befehl, der die kWh-Zahl der Prognose in die Standardsausgabe schreibt |
 | `STATE_DATEI` | – | State-Datei der Stichproben. Leer = `~/.local/state/ortsnetz-e3dc/state.json`, bei systemd `/var/lib/ortsnetz-e3dc/state.json` |
 | `SENDINTERVALL_S` | – | Sendeintervall in Sekunden, Standard 300; darf nicht kleiner sein |
+| `SENDEZUFALL_S` | – | Zufallsverzögerung vor dem Senden in Sekunden, Standard 60, Maximum 120; `0` schaltet sie aus. Nur auf Sendeläufen |
 | `ENV_DATEI` | – | Pfad einer alternativen `.env`-Datei, Standard ist `.env` neben dem Script |
 
 ### `.env`-Datei
@@ -173,10 +174,10 @@ crontab -e
 ```
 
 ```
-*/1 * * * * /usr/bin/timeout 90 /usr/bin/python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py >> $HOME/ortsnetz-e3dc.log 2>&1
+*/1 * * * * /usr/bin/timeout 180 /usr/bin/python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py >> $HOME/ortsnetz-e3dc.log 2>&1
 ```
 
-Das Skript liest die `.env`-Datei selbst, die Zugangsdaten stehen also nicht in der Crontab. Eine Stichprobe je Minute, Senden alle 5 Minuten: die API erwartet pro Messquelle ein Sendeintervall von 300 Sekunden, das Sendeintervall wird durch `SENDINTERVALL_S` nicht verkürzt. Das Skript bricht nach 60 Sekunden ab (`MAX_LAUFZEIT_S`), `timeout 90` fängt zusätzlich einen hängenden Lauf ab, damit sich bei einem nicht antwortenden Hauskraftwerk keine Prozesse ansammeln. Der Eintrag gehört in die Crontab eines normalen, unprivilegierten Benutzers, nicht in die von root.
+Das Skript liest die `.env`-Datei selbst, die Zugangsdaten stehen also nicht in der Crontab. Eine Stichprobe je Minute, Senden alle 5 Minuten: die API erwartet pro Messquelle ein Sendeintervall von 300 Sekunden, das Sendeintervall wird durch `SENDINTERVALL_S` nicht verkürzt. Vor dem Senden wartet das Skript eine zufällige Zeit (`SENDEZUFALL_S`), damit nicht alle Integrationen, die auf die vollen Minuten getimt sind, gleichzeitig auf die API treffen. Das Skript bricht nach 120 Sekunden ab (`MAX_LAUFZEIT_S`), `timeout 180` fängt zusätzlich einen hängenden Lauf ab, damit sich bei einem nicht antwortenden Hauskraftwerk keine Prozesse ansammeln. Der Eintrag gehört in die Crontab eines normalen, unprivilegierten Benutzers, nicht in die von root.
 
 ## ⏱️ Betrieb per systemd-Timer
 
@@ -191,7 +192,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ortsnetz-e3dc.timer
 ```
 
-Der Dienst läuft mit `DynamicUser=yes` als unprivilegierter, temporärer Benutzer und nicht als root. `StateDirectory=ortsnetz-e3dc` gibt ihm den einzigen schreibbaren Ordner für die State-Datei; `Environment=STATE_DATEI` zeigt ihm den Pfad. `TimeoutStartSec=60s` begrenzt die Laufzeit einer Stichprobe. Pfade bei Bedarf an die eigene Installation anpassen.
+Der Dienst läuft mit `DynamicUser=yes` als unprivilegierter, temporärer Benutzer und nicht als root. `StateDirectory=ortsnetz-e3dc` gibt ihm den einzigen schreibbaren Ordner für die State-Datei; `Environment=STATE_DATEI` zeigt ihm den Pfad. `TimeoutStartSec=130s` begrenzt die Laufzeit eines Laufs und nimmt den Sendeversatz (`SENDEZUFALL_S`) mit auf. Pfade bei Bedarf an die eigene Installation anpassen.
 
 Kontrolle:
 
@@ -239,6 +240,8 @@ PV_FORECAST_HA_ENTITY=sensor.pv_prognose_sud,sensor.pv_prognose_west
 PV_FORECAST_MAX_AGE_S=3600
 ```
 
+`PV_FORECAST_MAX_AGE_S` auf die Aktualisierungsfrequenz der Quelle stellen: stündliche Quellen passen zu 3600. **Solcast** aktualisiert nur wenige Male am Tag (Lücken von 4–6 h); mit 3600 fiele die Prognose tagsüber meist weg, hier sind 21600 der passende Wert.
+
 * Der Aufruf ist `GET /api/states/<entity>` mit `Authorization: Bearer …`, 15 s Timeout je Sensor. Mehrere Sensoren werden **addiert**, für eine Ost/West-Anlage also ein Sensor je Teilanlage.
 * Der Sensor muss **Energie in kWh** melden (`unit_of_measurement: "kWh"`). `Wh` und `MWh` werden umgerechnet; eine fehlende oder unbekannte Einheit (besonders `W`, also Leistung) wird **nicht geraten**, der Sensor übersprungen. Ein Template-Sensor in kWh:
 
@@ -272,10 +275,11 @@ Bei erfolgreicher Übertragung:
 
 ```
 2026-11-04 09:05:01 Benutzter Zähler: Index 1 Typ PM_TYPE_ROOT | L1=230.15 L2=231.02 L3=229.85 V | f=50.01 Hz | P=-4200.0 W | SOC=57 % | 5 Stichproben im Intervall
-2026-11-04 09:05:02 Übertragen (2026-11-04T09:05:01Z): HTTP 202, Messung angenommen.
-2026-11-04 09:05:02 Ampel: l1=normal l2=normal l3=normal | gesamt=green
-2026-11-04 09:05:02 Speicherladeempfehlung: charge.
-2026-11-04 09:05:02 Redispatch: active=True affected_units=2 active_measures=[...] data_updated_at=2026-11-04T09:00:00Z
+2026-11-04 09:05:01 Sendeversatz: warte 23 s, damit nicht alle Quellen gleichzeitig senden.
+2026-11-04 09:05:24 Übertragen (2026-11-04T09:05:01Z): HTTP 202, Messung angenommen.
+2026-11-04 09:05:24 Ampel: l1=normal l2=normal l3=normal | gesamt=green
+2026-11-04 09:05:24 Speicherladeempfehlung: charge.
+2026-11-04 09:05:24 Redispatch: active=True affected_units=2 active_measures=[...] data_updated_at=2026-11-04T09:00:00Z
 ```
 
 Bei einer Laufzeit, die noch nicht sendet:
@@ -285,7 +289,7 @@ Bei einer Laufzeit, die noch nicht sendet:
 2026-11-04 09:06:01 Stichprobe gespeichert, Senden erst in 240 s.
 ```
 
-Das Skript sendet nur, wenn die API `HTTP 202` antwortet **und** die Antwort `accepted: true` enthält. Die Antwortfelder `status` (Ampel je Phase und gesamt), `storage_recommendation` und `redispatch` werden ins Log geschrieben; fehlen sie (ältere Server), wird nichts spekuliert. Exit-Codes:
+Das Skript sendet nur, wenn die API `HTTP 202` antwortet **und** die Antwort `accepted: true` enthält. `observed_at` ist die Zeit der Stichprobe, nicht die Zeit nach dem Versatz; Stichproben-Zeitstempel und Kennzahlenfenster bleiben durch den Versatz unverändert. Die Antwortfelder `status` (Ampel je Phase und gesamt), `storage_recommendation` und `redispatch` werden ins Log geschrieben; fehlen sie (ältere Server), wird nichts spekuliert. Exit-Codes:
 
 | Exit-Code | Bedeutung |
 |---|---|

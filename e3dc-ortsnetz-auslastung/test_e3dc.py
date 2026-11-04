@@ -844,7 +844,7 @@ class KonfigurationTests(unittest.TestCase):
                            ("PV_FORECAST_HA_TOKEN", ""), ("PV_FORECAST_HA_ENTITY", ""),
                            ("PV_FORECAST_MAX_AGE_S", 3600), ("PV_FORECAST_DATEI", ""),
                            ("PV_FORECAST_BEFEHL", ""), ("SMARTMETER_MODEL", ""),
-                           ("STATE_DATEI", ""), ("SENDINTERVALL_S", 300), ("ENV_DATEI", None)):
+                           ("STATE_DATEI", ""), ("SENDINTERVALL_S", 300), ("SENDEZUFALL_S", 60), ("ENV_DATEI", None)):
             patcher = patch.object(MODULE, name, wert)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -1000,6 +1000,28 @@ class KonfigurationTests(unittest.TestCase):
             with self.assertRaises(MODULE.KonfigurationsFehler):
                 MODULE.konfiguration_pruefen()
 
+    def test_sendeversatz_standard(self):
+        with patch.dict("os.environ", umgebung(), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            MODULE.konfiguration_pruefen()
+        self.assertEqual(MODULE.SENDEZUFALL_S, 60, "Standardversatz")
+
+    def test_sendeversatz_negativ(self):
+        with patch.dict("os.environ", umgebung(SENDEZUFALL_S="-1"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler) as fehler:
+                MODULE.konfiguration_pruefen()
+        self.assertIn("SENDEZUFALL_S", str(fehler.exception))
+
+    def test_sendeversatz_zu_gross(self):
+        with patch.dict("os.environ", umgebung(SENDEZUFALL_S="121"), clear=True):
+            MODULE.env_datei_laden()
+            MODULE.konfiguration_laden()
+            with self.assertRaises(MODULE.KonfigurationsFehler):
+                MODULE.konfiguration_pruefen()
+
 
 class SendeTests(unittest.TestCase):
     payload = {"observed_at": "2026-09-15T08:00:00Z", "latitude": 48.1, "longitude": 11.7,
@@ -1042,7 +1064,7 @@ class MainTests(unittest.TestCase):
                            ("PV_FORECAST_HA_TOKEN", ""), ("PV_FORECAST_HA_ENTITY", ""),
                            ("PV_FORECAST_MAX_AGE_S", 3600), ("PV_FORECAST_DATEI", ""),
                            ("PV_FORECAST_BEFEHL", ""), ("SMARTMETER_MODEL", ""),
-                           ("SENDINTERVALL_S", 300), ("ENV_DATEI", None)):
+                           ("SENDINTERVALL_S", 300), ("SENDEZUFALL_S", 0), ("ENV_DATEI", None)):
             patcher = patch.object(MODULE, name, wert)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -1157,6 +1179,41 @@ class MainTests(unittest.TestCase):
              patch("urllib.request.urlopen", side_effect=ha_abruf([antwort])):
             self.assertEqual(self.main(fake, gesendet=gesendet), 0)
         self.assertEqual(gesendet[0]["pv_forecast_kwh"], 24.5)
+
+    def test_sendeversatz_nur_auf_sendelaufen(self):
+        # Versatz nur auf Sendeläufen; Stichprobenläufe ohne Senden warten nie
+        gewartet = []
+        fake = FakeE3DC(frequenz=50.0)
+        with patch.object(MODULE, "SENDEZUFALL_S", 45), \
+             patch.object(MODULE, "random") as zufall, \
+             patch.object(MODULE, "time") as zeit:
+            zufall.randint.return_value = 42
+            zeit.sleep.side_effect = lambda s: gewartet.append(s)
+            self.assertEqual(self.main(fake, gesendet=[]), 0)
+            self.zeit[0] = ZEIT + 60
+            self.assertEqual(self.main(fake, gesendet=[]), 0)
+        self.assertEqual(gewartet, [42], "genau eine Wartezeit, nur auf dem Sendelauf")
+        self.assertEqual(zufall.randint.call_args[0], (0, 45))
+
+    def test_sendeversatz_grenzen(self):
+        gewartet = []
+        with patch.object(MODULE, "SENDEZUFALL_S", 60), patch.object(MODULE, "time") as zeit:
+            zeit.sleep.side_effect = lambda s: gewartet.append(s)
+            for _ in range(40):
+                MODULE.sendeverzoegern()
+        self.assertLessEqual(len(gewartet), 40)
+        for wartezeit in gewartet:
+            self.assertTrue(0 <= wartezeit <= 60, "Wartezeit innerhalb der Grenze")
+
+    def test_sendeversatz_aus(self):
+        gewartet = []
+        with patch.object(MODULE, "SENDEZUFALL_S", 0), \
+             patch.object(MODULE, "random") as zufall, \
+             patch.object(MODULE, "time") as zeit:
+            zeit.sleep.side_effect = lambda s: gewartet.append(s)
+            self.assertEqual(self.main(FakeE3DC(frequenz=50.0), gesendet=[]), 0)
+        self.assertEqual(gewartet, [], "SENDEZUFALL_S=0 wartet nicht")
+        self.assertFalse(zufall.randint.called)
 
     def test_konfiguration(self):
         with patch.dict("os.environ", umgebung(E3DC_HOST=""), clear=True):

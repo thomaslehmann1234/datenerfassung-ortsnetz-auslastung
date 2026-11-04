@@ -5,8 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# Maximale Laufzeit je Stichprobe, passt zum MAX_LAUFZEIT_S im Script
-TimeoutStartSec=60s
+# Maximale Laufzeit je Stichprobe; passt zu MAX_LAUFZEIT_S im Script und nimmt den
+# Sendeversatz (SENDEZUFALL_S) plus die Netzwerkzeiten auf.
+TimeoutStartSec=130s
 EnvironmentFile=/etc/ortsnetz-e3dc.env
 ExecStart=/usr/bin/python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py
 
