@@ -10,6 +10,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [Home Assistant](#home-assistant)
 - [ioBroker](#iobroker)
 - [EcoFlow Smart Meter (ioBroker)](#ecoflow-smart-meter-iobroker)
+- [FHEM](#fhem)
 - [MQTT](#mqtt)
 - [evcc](#evcc)
 - [Victron GX](#victron-gx)
@@ -40,6 +41,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [Home Assistant](#home-assistant) | Vorhandene Spannungssensoren | Home Assistant / HACS | HTTPS | Home-Assistant-Installationen |
 | [ioBroker](#iobroker) | Vorhandene Spannungsdatenpunkte | ioBroker JavaScript | HTTPS | ioBroker-Installationen |
 | [EcoFlow Smart Meter (ioBroker)](#ecoflow-smart-meter-iobroker) | EcoFlow Smart Meter über die EcoFlow-Cloud | ioBroker JavaScript | HTTPS | EcoFlow Smart Meter mit ioBroker.ecoflow-mqtt |
+| [FHEM](#fhem) | Vorhandene Spannungs-Readings | FHEM `at` (Perl) | HTTPS | FHEM-Installationen |
 | [MQTT](#mqtt) | MQTT-Topics | Node.js / Docker | HTTPS | Smart-Meter-Gateways mit MQTT und EVCC |
 | [evcc](#evcc) | Shelly Gen2/3 oder Modbus TCP | Python / cron | HTTPS | evcc-Installationen mit direktem Zählerzugriff |
 | [Victron GX](#victron-gx) | VE.Bus oder Netzzähler über D-Bus | Python / Venus OS | HTTPS | Victron GX-Geräte |
@@ -111,6 +113,15 @@ Das Script für den ioBroker-JavaScript-Adapter liest die Phasenspannungen L1–
 - Ordner: [`ecoflow-ortsnetz-auslastung`](ecoflow-ortsnetz-auslastung)
 - Voraussetzungen: `ioBroker.javascript` ab Version 7.9 und [ioBroker.ecoflow-mqtt](https://github.com/foxthefox/ioBroker.ecoflow-mqtt) mit eingerichtetem Smart Meter
 - Anleitung: [EcoFlow-README](ecoflow-ortsnetz-auslastung/README.md)
+
+## FHEM
+
+Ein einzelnes FHEM-`at` liest drei vorhandene Spannungs-Readings und optional die Netzfrequenz und sendet sie alle fünf Minuten. Die Antwort der API (Ampel, Speicherladeempfehlung, Redispatch) steht anschließend als Readings zur Verfügung.
+
+- Ordner: [`fhem-ortsnetz-auslastung`](fhem-ortsnetz-auslastung)
+- Code: [`at_ortsnetz.txt`](fhem-ortsnetz-auslastung/at_ortsnetz.txt), wird im DEF-Feld eines leeren `at` eingefügt
+- Voraussetzungen: FHEM, Perl-Modul `IO::Socket::SSL` und Internetzugang
+- Anleitung: [FHEM-README](fhem-ortsnetz-auslastung/README.md)
 
 ## MQTT
 
