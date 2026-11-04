@@ -367,5 +367,138 @@ class ExterneFrequenzTest(SmaBasis):
         modul.frequenzquelle_pruefen()
 
 
+def messung(l1, l2=None, frequenz=None, seriennummer=123456):
+    daten = messwert(32, l1)
+    if l2 is not None:
+        daten += messwert(52, l2)
+    if frequenz is not None:
+        daten += messwert(14, frequenz)
+    return telegramm(daten, seriennummer)
+
+
+def statistikfelder(payload):
+    return {feld: wert for feld, wert in payload.items()
+            if feld.endswith(("_min", "_max", "_avg"))}
+
+
+class StatistikTest(SmaBasis):
+    def dauerbetrieb(self, ereignisse, antworten):
+        # main() im Dauerbetrieb; jedes Empfangsereignis dauert eine Sekunde.
+        uhr = [0]
+
+        def empfangen(_groesse):
+            uhr[0] += 1
+            if not ereignisse:
+                raise KeyboardInterrupt
+            ereignis = ereignisse.pop(0)
+            if ereignis is socket.timeout:
+                raise socket.timeout
+            return ereignis, ("192.0.2.1", 9522)
+
+        sock = MagicMock()
+        sock.recvfrom.side_effect = empfangen
+        self.netz.side_effect = None
+        self.netz.return_value.__enter__.return_value = sock
+        self.http.side_effect = antworten
+        with patch.object(sma.time, "monotonic", side_effect=lambda: uhr[0]):
+            self.assertEqual(sma.main([]), 130)
+        return [json.loads(aufruf[0][0].data) for aufruf in self.http.call_args_list]
+
+    def test_minimum_maximum_und_mittel_je_intervall(self):
+        sma.INTERVAL_S = 5
+        ok = b'{"accepted":true}'
+        fehler = sma.urllib.error.HTTPError(
+            sma.API_URL, 503, "unavailable", {}, io.BytesIO(b"busy"))
+        uploads = self.dauerbetrieb([
+            messung(230000),                                    # Upload 1, t=1
+            messung(228400, 229000), b"garbage", socket.timeout,
+            messung(232100, frequenz=50080),                    # bis t=5
+            messung(230000, 231000, frequenz=49960),            # Upload 2, t=6
+            messung(250000, seriennummer=999), messung(229600),
+            socket.timeout, socket.timeout,                     # bis t=10
+            messung(231000),                                    # Upload 3, t=11
+        ], [http_antwort(ok, 202), fehler, http_antwort(ok, 202)])
+
+        self.assertEqual(len(uploads), 3)
+        self.assertEqual(statistikfelder(uploads[0]), {})
+        self.assertEqual(uploads[1]["l1_v"], 230.0)
+        self.assertEqual(statistikfelder(uploads[1]), {
+             "l1_v_min": 228.4, "l1_v_max": 232.1, "l1_v_avg": 230.2,
+             "l2_v_min": 229.0, "l2_v_max": 231.0, "l2_v_avg": 230.0,
+             "grid_frequency_hz_min": 49.96, "grid_frequency_hz_max": 50.08,
+             "grid_frequency_hz_avg": 50.02})
+        # Nach fehlgeschlagenem Upload neu begonnen, fremder Zähler nicht mitgezählt.
+        self.assertEqual(statistikfelder(uploads[2]),
+                         {"l1_v_min": 229.6, "l1_v_max": 231.0, "l1_v_avg": 230.3})
+        self.assertIn("Min/Max L1=229.6/231.0 V", self.ausgabe.getvalue())
+
+    def test_unplausible_werte_nicht_in_statistik(self):
+        statistik = {}
+        for werte in ({32: 230000, 52: 0, 14: 60000}, {32: 600000, 72: 231000},
+                      {32: 230200, 14: 50000}):
+            sma.statistik_erfassen(statistik, werte)
+        self.assertEqual(sma.statistik_felder(statistik), {
+            "l1_v_min": 230.0, "l1_v_max": 230.2, "l1_v_avg": 230.1,
+            "l3_v_min": 231.0, "l3_v_max": 231.0, "l3_v_avg": 231.0,
+            "grid_frequency_hz_min": 50.0, "grid_frequency_hz_max": 50.0,
+            "grid_frequency_hz_avg": 50.0})
+
+    def test_gerundeter_mittelwert_bleibt_zwischen_minimum_und_maximum(self):
+        for roh in (49985, 50015, 49995):
+            with self.subTest(roh=roh):
+                statistik = {}
+                for _ in range(11):
+                    sma.statistik_erfassen(statistik, {32: 230000, 14: roh})
+                felder = sma.statistik_felder(statistik)
+                self.assertEqual(felder["grid_frequency_hz_avg"],
+                                 felder["grid_frequency_hz_max"])
+                self.assertEqual(felder["grid_frequency_hz_min"],
+                                 felder["grid_frequency_hz_max"])
+
+    def test_keine_zaehlerstatistik_neben_externer_frequenz(self):
+        sma.FREQUENCY_URL = FREQUENZ_URL
+        sma.FREQUENCY_KEY = "Fac"
+        self.http.side_effect = None
+        self.http.return_value = http_antwort(b'{"Fac": 50.2}')
+        statistik = {}
+        sma.statistik_erfassen(statistik, {32: 229000, 14: 49960})
+        with patch.object(sma, "senden", return_value=True) as senden:
+            self.assertTrue(sma.einmal(self.empfang([messung(230000)]),
+                                       statistiken={123456: statistik}))
+        payload = senden.call_args[0][0]
+        self.assertEqual(payload["grid_frequency_hz"], 50.2)
+        self.assertEqual(statistikfelder(payload),
+                         {"l1_v_min": 229.0, "l1_v_max": 230.0, "l1_v_avg": 229.5})
+
+    def intervall(self, pakete):
+        statistiken = {}
+        sock = MagicMock()
+        sock.recvfrom.side_effect = [
+            *((paket, ("192.0.2.1", 9522)) for paket in pakete), KeyboardInterrupt]
+        with patch.object(sma.time, "monotonic", return_value=0), \
+                self.assertRaises(KeyboardInterrupt):
+            sma.intervall_erfassen(sock, 1, statistiken)
+        return statistiken
+
+    def test_intervall_nur_konfigurierter_zaehler(self):
+        sma.METER_SERIAL = 222
+        statistiken = self.intervall([messung(230000, seriennummer=111),
+                                      messung(231000, seriennummer=222)])
+        self.assertEqual(list(statistiken), [222])
+
+    def test_intervall_begrenzt_seriennummern(self):
+        statistiken = self.intervall(
+            [messung(230000, seriennummer=nummer) for nummer in range(40)]
+            + [messung(240000, seriennummer=0)])
+        self.assertEqual(sorted(statistiken), list(range(sma.MAX_ZAEHLER)))
+        self.assertEqual(statistiken[0]["l1_v"], [230.0, 240.0, 470.0, 2])
+
+    def test_einzelmessung_ohne_statistik(self):
+        self.antwort(b'{"accepted":true}')
+        self.assertEqual(self.einmallauf(["--once"], [telegramm(SPANNUNGEN)]), 0)
+        payload = json.loads(self.http.call_args[0][0].data)
+        self.assertEqual(statistikfelder(payload), {})
+
+
 if __name__ == "__main__":
     unittest.main()
