@@ -1,0 +1,23 @@
+[Unit]
+Description=Ortsnetz-Auslastung E3/DC (eine Messung senden)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Maximale Laufzeit je Messung, passt zum MAX_LAUFZEIT_S im Script
+TimeoutStartSec=60s
+EnvironmentFile=/etc/ortsnetz-e3dc.env
+ExecStart=/usr/bin/python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py
+
+# Läuft als unprivilegierter, temporärer Benutzer, nicht als root.
+# Script und Ordner gehören root und sind für diesen Benutzer nicht beschreibbar.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6

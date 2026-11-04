@@ -26,6 +26,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [USV mit NUT](#usv-mit-nut)
 - [WeeWX](#weewx)
 - [smartWB Wallbox](#smartwb-wallbox)
+- [E3DC](#e3dc)
 - [Loxone Miniserver](#loxone-miniserver)
 - [Gemeinsame Eigenschaften](#gemeinsame-eigenschaften)
 - [API](#api)
@@ -56,6 +57,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [USV mit NUT](#usv-mit-nut) | USV-Eingangsspannung über NUT | Shell / cron | HTTPS | NUT-kompatible einphasige USVs |
 | [WeeWX](#weewx) | Vorhandene Sensoren | Python / systemd | HTTPS | WeeWX mit Zusatzmodul
 | [smartWB Wallbox](#smartwb-wallbox) | HTTP-API der Wallbox (Spannungen L1–L3) | Python / cron / systemd-Timer | HTTPS | smartWB / EVSE-WiFi 2.0 mit Stromzähler |
+| [E3DC](#e3dc) | RSCP | Python / cron | HTTPS | E3DC Installationen |
 | [Loxone Miniserver](#loxone-miniserver) | Vorhandene Bausteine über den Webservice (`/jdev/sps/io`) | Python / systemd / cron | HTTPS | Loxone-Installationen mit Spannungswerten, z. B. aus Modbus-Zählern oder Wechselrichtern |
 
 ## Shelly Pro 3EM und Pro EM50
@@ -266,6 +268,15 @@ Das Python-Script liest die Phasenspannungen einer smartWB / EVSE-WiFi 2.0 Wallb
 
 Installation, Konfiguration, cron-Eintrag und systemd-Timer stehen in der [smartWB-README](smartwb-ortsnetz-auslastung/README.md).
 
+## E3DC
+
+Das Python-Script liest die Phasenspannungen und die Netzfrequenz von einem Hauskraftwerk via RSCP aus und überträgt sie via HTTPS an die Webseite. Es muss via Cron oder Systemd Timer automatisch angestoßen werden.
+
+- Ordner: [`e3dc-ortsnetz-auslastung`](e3dc-ortsnetz-auslastung)
+- Script: [`e3dc_ortsnetz.py`](e3dc-ortsnetz-auslastung/e3dc_ortsnetz.py)
+- Voraussetzungen: Python Host welcher Dauerhaft läuft und mit dem E3DC Hauskraftwerk im gleichen Subnetz ist und mit dem Internet kommunizieren kann. Automatisierung muss via cron der systemd gemacht werden.
+- Konfiguration: Zugangsdaten und Standort stehen in einer `.env`-Datei (`.env.example`), nicht im Script. Der Netzzähler wird über den Typ `PM_TYPE_ROOT` gefunden, der Index ist konfigurierbar.
+- Exit-Codes: 0 Erfolg, 1 Konfiguration, 2 RSCP, 3 Messung, 4 API – für cron-, systemd- und Monitoring-Auswertung.
 ## Loxone Miniserver
 
 Das Python-Script liest Spannungen (optional Frequenz, Phasenströme, Leistungsfaktor, Netzleistung, Speicher-SOC und die heutige PV-Prognose) aus beliebigen Bausteinen eines Loxone Miniservers über dessen Webservice (`/jdev/sps/io/<Bezeichnung>`). Im Dauerbetrieb liest es alle 10 Sekunden und sendet alle fünf Minuten die Messung mit Minimum, Maximum und Mittelwert über das Intervall; `--once` sendet eine einzelne Messung (cron).
