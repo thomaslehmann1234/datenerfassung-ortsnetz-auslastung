@@ -118,7 +118,7 @@ SENDINTERVALL_S = 300
 ENV_DATEI = None
 
 API_URL = "https://www.ortsnetz-auslastung.de/v1/measurements"
-INTEGRATION_VERSION = "e3dc-rscp-1.3"
+INTEGRATION_VERSION = "e3dc-rscp-1.4"
 
 # Maximale Laufzeit eines Aufrufs in Sekunden. Die RSCP-Timeouts begrenzen nur einzelne
 # Netzwerkoperationen; eine halb offene Verbindung würde den cron-/systemd-Lauf sonst
@@ -627,16 +627,18 @@ def batteriekapazitaet_kwh(e3dc):
 
 
 def zaehlerbezeichnung(e3dc):
-    """Liefert smartmeter_model: Konfiguration hat Vorrang, sonst Modell und Seriennummer."""
+    """Liefert smartmeter_model: Konfiguration hat Vorrang, sonst Modell des Kraftwerks.
+
+    Die Seriennummer wird bewusst nicht übertragen: sie ist eine Gerätekennung, und das
+    Repo überträgt keine Gerätekennungen. Seriennummer oder eine volle Bezeichnung ist
+    nur auf ausdrücklichen Wunsch über SMARTMETER_MODEL möglich.
+    """
     if SMARTMETER_MODEL:
         return SMARTMETER_MODEL[:120]
     anteile = ["E3/DC"]
     modell = getattr(e3dc, "model", None)
     if isinstance(modell, str) and modell.strip():
         anteile.append(modell.strip())
-    seriennummer = getattr(e3dc, "serialNumber", None)
-    if isinstance(seriennummer, str) and seriennummer.strip():
-        anteile.append(seriennummer.strip())
     if len(anteile) == 1:
         return AUSWICH_MODELL
     return " ".join(anteile)[:120]

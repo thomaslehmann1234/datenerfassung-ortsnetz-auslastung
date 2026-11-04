@@ -385,7 +385,7 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(payload["grid_frequency_hz"], 50.02)
         self.assertEqual(payload["grid_power_w"], -4200.0)
         self.assertEqual(payload["battery_soc_percent"], 57)
-        self.assertEqual(payload["integration_version"], "e3dc-rscp-1.3")
+        self.assertEqual(payload["integration_version"], "e3dc-rscp-1.4")
         self.assertRegex(payload["observed_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertNotIn("plant_capacity_kwp", payload)
         self.assertNotIn("battery_capacity", payload)
@@ -503,9 +503,12 @@ class PayloadTests(unittest.TestCase):
         payload = protokollierter_lauf(dict(NETZ_ZAEHLER), FakeE3DC(frequenz=None, leistung=None))
         self.assertNotIn("grid_power_w", payload)
 
-    def test_zaehlerbezeichnung_aus_modell_und_seriennummer(self):
-        payload = protokollierter_lauf(dict(NETZ_ZAEHLER), FakeE3DC(frequenz=None))
-        self.assertEqual(payload["smartmeter_model"], "E3/DC S10_Mini 8800123456789")
+    def test_zaehlerbezeichnung_ohne_seriennummer(self):
+        fake = FakeE3DC(frequenz=None)
+        payload = protokollierter_lauf(dict(NETZ_ZAEHLER), fake)
+        self.assertEqual(payload["smartmeter_model"], "E3/DC S10_Mini")
+        self.assertNotIn("8800123456789", json.dumps(payload),
+                         "die Seriennummer ist eine Gerätekennung und darf nicht übertragen werden")
 
     def test_zaehlerbezeichnung_override(self):
         fake = FakeE3DC(frequenz=None)
@@ -1001,7 +1004,7 @@ class KonfigurationTests(unittest.TestCase):
 class SendeTests(unittest.TestCase):
     payload = {"observed_at": "2026-09-15T08:00:00Z", "latitude": 48.1, "longitude": 11.7,
                "l1_v": 230.0, "l2_v": 230.0, "l3_v": 230.0,
-               "smartmeter_model": "E3DC Hauskraftwerk", "integration_version": "e3dc-rscp-1.3"}
+               "smartmeter_model": "E3DC Hauskraftwerk", "integration_version": "e3dc-rscp-1.4"}
 
     def status(self, code, text):
         with patch("urllib.request.urlopen", return_value=FakeAntwort(code, text)):

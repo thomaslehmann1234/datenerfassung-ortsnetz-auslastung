@@ -11,6 +11,7 @@ Das Skript läuft im **Minutentakt**: jeder Aufruf liest eine Stichprobe, hängt
 * **Python:** Version 3.8 oder höher
 * **pye3dc:** `pip install pye3dc` (Version 0.10.0 oder neuer, Modulname `e3dc`)
 * **Netzwerk:** Lokaler Zugriff auf das E3/DC Hauskraftwerk über dessen IP-Adresse
+* **Zeitsynchronisation:** NTP/chrony aktiv (`timedatectl` prüfen). Die Stichproben des Intervalls und `observed_at` werden aus der Systemzeit gebildet.
 * **Zugangsdaten:**
   * Zugang zum E3/DC-Portal (Benutzername und Passwort, für die RSCP-Anmeldung)
   * Lokaler RSCP-Schlüssel (am Display des E3/DC unter *Einstellungen > Personalisieren* einstellbar)
@@ -41,7 +42,7 @@ Zugangsdaten und Standort stehen in einer `.env`-Datei oder in Environment-Varia
 | `METER_INDEX` | – | Index des Netzzählers, Standard ist die automatische Suche nach `PM_TYPE_ROOT` |
 | `PLANT_CAPACITY_KWP` | – | Installierte PV-Leistung in kWp. Leer = die installierte Spitzenleistung des Kraftwerks |
 | `BATTERY_CAPACITY_KWH` | – | Nutzbare Batteriespeicherkapazität aus dem Datenblatt. Leer = die installierte Kapazität als Näherung |
-| `SMARTMETER_MODEL` | – | Freie Bezeichnung des Messgeräts. Leer = Modell und Seriennummer des Kraftwerks |
+| `SMARTMETER_MODEL` | – | Freie Bezeichnung des Messgeräts. Leer = Modell des Kraftwerks ohne Seriennummer |
 | `PV_FORECAST_HA_URL` | – | Basis-URL des Home Assistant, z. B. `http://192.168.60.10:8123`; nur für die Prognose |
 | `PV_FORECAST_HA_TOKEN` | – | Long-lived Token mit Scope *Read & Historical* für die Prognose aus Home Assistant |
 | `PV_FORECAST_HA_ENTITY` | – | Kommata-Liste der Prognosesensoren, z. B. `sensor.pv_prognose_sud,sensor.pv_prognose_west` |
@@ -97,7 +98,7 @@ An einem E3/DC-Kraftwerk mit PV-Wechselrichtern funktioniert dieser Weg (Testlau
 * `grid_power_w`: RSCP-Tag `EMS_REQ_POWER_GRID`. pye3dc dokumentiert den Wert als „absorption from grid in W“, also **positiv = Bezug, negativ = Einspeisung** – genau die Konvention, die die API verlangt. Werte außerhalb von ±60 kW werden nicht übertragen.
 * `battery_soc_percent`: RSCP-Tag `EMS_REQ_BAT_SOC`, 0 bis 100. `0` ist ein gültiger Wert. Ein Hauskraftwerk ohne Speicher beantwortet die Abfrage nicht; das Feld wird dann weggelassen.
 * `plant_capacity_kwp` und `battery_capacity`: aus den statischen Systemangaben des Kraftwerks (`installedPeakPower` in W, `installedBatteryCapacity` in Wh), die pye3dc beim Verbindungsaufbau ohnehin einliest. Ein Konfigurationswert hat Vorrang, weil die API die **nutzbare** Kapazität will und `installedBatteryCapacity` die **installierte** nennt.
-* `smartmeter_model`: Modell und Seriennummer, die pye3dc aus der Seriennummer des Kraftwerks erkennt, z. B. `E3/DC S10_Mini 8800123456789`.
+* `smartmeter_model`: Modell des Hauskraftwerks, das pye3dc beim Verbindungsaufbau einliest, z. B. `E3/DC S10_Mini`. Die Seriennummer wird **nicht** übertragen – sie ist eine Gerätekennung und das Repo überträgt keine Gerätekennungen. Wer sie ausdrücklich wünscht, setzt sie über `SMARTMETER_MODEL`.
 
 ---
 
@@ -107,7 +108,7 @@ Die API erwartet die Kennzahlen `l1_v_min`, `l1_v_max`, `l1_v_avg` (entsprechend
 
 * Jeder Minutenlauf hängt die Stichprobe `[Zeit, L1, L2, L3, Frequenz]` an die State-Datei.
 * Beim Senden werden nur die Stichproben des Fensters `[jetzt − 300 s, jetzt]` ausgewertet.
-* Stichproben älter als 15 Minuten und Stichproben aus der Zukunft werden verworfen, damit ein verschobener Timer die Kennzahlen nicht mit alten Werten füllt.
+* Stichproben älter als 15 Minuten und Stichproben aus der Zukunft werden verworfen, damit ein verschobener Timer die Kennzahlen nicht mit alten Werten füllt. Das setzt eine synchronisierte Uhr voraus: eine voreilende Uhr wirft die eigenen Stichproben still als Zukunft weg, eine nacheilende Uhr füllt das Fenster mit alten Werten.
 * Nicht gemessene Phasen (`None`) werden bei den Kennzahlen ignoriert; eine Phase ohne jegliche gültige Stichprobe bekommt `-1`, wie die API es verlangt.
 * Fehlende Frequenz: die Frequenzkennzahlen werden weggelassen, nicht mit `-1` gefüllt.
 * Die State-Datei wird atomar geschrieben (Schreiben in `.tmp`, dann `os.replace`). Ein Schreibfehler bricht die Messung nicht ab.
@@ -138,8 +139,8 @@ python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py --dry-run
   "l1_v": 230.15,
   "l2_v": 231.02,
   "l3_v": 229.85,
-  "smartmeter_model": "E3/DC S10_Mini 8800123456789",
-  "integration_version": "e3dc-rscp-1.3",
+  "smartmeter_model": "E3/DC S10_Mini",
+  "integration_version": "e3dc-rscp-1.4",
   "l1_v_min": 229.0,
   "l1_v_max": 231.5,
   "l1_v_avg": 230.23,
@@ -215,13 +216,13 @@ Nur einen der beiden Wege (cron **oder** systemd-Timer) einrichten, sonst werden
 * Netzleistung am Hausanschluss (`grid_power_w`, negativ = Einspeisung)
 * Ladezustand des Batteriespeichers (`battery_soc_percent`)
 * installierte PV-Leistung und Batteriespeicherkapazität, aus den Systemangaben des Kraftwerks oder der Konfiguration
-* Modell und Seriennummer des Hauskraftwerks als Bezeichnung des Messgeräts
+* Modell des Hauskraftwerks als Bezeichnung des Messgeräts, ohne Seriennummer
 * optional die PV-Tagesprognose aus Home Assistant (REST API), einer Datei oder einem Befehl
 * Kennung der Integration
 
-**Neu gegenüber der ersten Version:** Netzleistung, Ladezustand, Kapazitäten, Seriennummer des Kraftwerks und die Kennzahlen über das Intervall.
+**Neu gegenüber der ersten Version:** Netzleistung, Ladezustand, Kapazitäten, Modell des Kraftwerks und die Kennzahlen über das Intervall.
 
-Nicht übertragen werden insbesondere: Zugangsdaten, RSCP-Schlüssel, IP-Adresse des Hauskraftwerks, Zählerindex, Energiezähler, Strom (`l1_a` …), Scheinleistung (`apparent_power_va`) und Leistungsfaktor (`power_factor`). Die Strom- und Leistungsfaktorfelder entfallen bewusst: der Netzzähler (`PM_TYPE_ROOT`) meldet über RSCP nur Leistung, Spannung, Energie, Modus und Phasen – kein Strom und keine Scheinleistung. Werte vom PV-Wechselrichter (`PVI_AC_CURRENT`, `PVI_AC_APPARENTPOWER`) sind laut API-Beschreibung kein Ersatz für den Hausanschluss, und ein aus `P / U` gerechneter Strom wäre ohne Leistungsfaktor falsch. Die API erlaubt das Weglassen dieser Felder ausdrücklich.
+Nicht übertragen werden insbesondere: Zugangsdaten, RSCP-Schlüssel, IP-Adresse des Hauskraftwerks, Zählerindex, **Seriennummer und weitere Gerätekennungen**, Energiezähler, Strom (`l1_a` …), Scheinleistung (`apparent_power_va`) und Leistungsfaktor (`power_factor`). Die Strom- und Leistungsfaktorfelder entfallen bewusst: der Netzzähler (`PM_TYPE_ROOT`) meldet über RSCP nur Leistung, Spannung, Energie, Modus und Phasen – kein Strom und keine Scheinleistung. Werte vom PV-Wechselrichter (`PVI_AC_CURRENT`, `PVI_AC_APPARENTPOWER`) sind laut API-Beschreibung kein Ersatz für den Hausanschluss, und ein aus `P / U` gerechneter Strom wäre ohne Leistungsfaktor falsch. Die API erlaubt das Weglassen dieser Felder ausdrücklich.
 
 ### PV-Prognose
 
