@@ -84,6 +84,12 @@ Der Netzzähler ist **nicht** automatisch `powermeters[0]`: E3/DC meldet die ins
 
 Fund der Typ nicht (sehr alte pye3dc-Versionen nennen keine Typnamen), wird der erste Zähler benutzt und das im Log ausdrücklich als Warnung vermerkt.
 
+Im Log steht bei jeder Messung, welcher Zähler verwendet wurde:
+
+```
+2026-11-04 09:05:01 Benutzter Zähler: Index 1 Typ PM_TYPE_ROOT | L1=230.15 L2=231.02 L3=229.85 V | f=50.01 Hz | P=-4200.0 W | SOC=57 % | 5 Stichproben im Intervall
+```
+
 ## 🌡️ Netzfrequenz
 
 `grid_frequency_hz` wird nur übertragen, wenn die Frequenz gemessen und plausibel ist (45 bis 55 Hz):
@@ -163,7 +169,7 @@ python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py --dry-run
 }
 ```
 
-Die Unit-Tests laufen ohne Hauskraftwerk: `python3 test_e3dc.py` (Einzelheiten im Abschnitt [Tests](#-tests))
+Die Unit-Tests laufen ohne Hauskraftwerk: `python3 test_e3dc.py` (Einzelheiten im Abschnitt »Tests«)
 
 ---
 
@@ -267,7 +273,6 @@ PV_FORECAST_MAX_AGE_S=3600
 
 Alle Quellen leer = das Feld wird nicht übertragen. Vor dem Senden prüft das Skript die Grenzen der API: eine Prognose ohne bekannte Anlagengröße und mehr als 10 kWh je kWp werden **nicht** gesendet, weil die API solche Messungen mit HTTP 422 verwirft.
 
-
 ---
 
 ## 🛠️ Log, Exit-Codes und Fehler
@@ -320,7 +325,7 @@ Das Skript sendet nur, wenn die API `HTTP 202` antwortet **und** die Antwort `ac
 | `Warnung: Prognosedatei … ist nicht lesbar` | `PV_FORECAST_DATEI` zeigt auf eine fehlende oder gesperrte Datei |
 | `Warnung: PV-Prognose … überschreitet …` | Prognose über 10 kWh je kWp, Feld wird weggelassen (API: HTTP 422) |
 | `RSCP-Verbindung … fehlgeschlagen` | Hauskraftwerk nicht erreichbar, RSCP-Schlüssel falsch, pye3dc-Version zu alt |
-| `Maximale Laufzeit von 60 s überschritten` | Hauskraftwerk oder API antwortet nur sehr langsam |
+| `Maximale Laufzeit von 120 s überschritten` | Hauskraftwerk, Home Assistant oder API antwortet nur sehr langsam |
 | `HTTP 403` | Der Standort ist für die Annahme gesperrt |
 | `HTTP 422` | Payload von der API abgelehnt, die Antwort nennt das betroffene Feld |
 
