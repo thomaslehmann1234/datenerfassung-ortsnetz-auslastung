@@ -156,12 +156,12 @@ class RESTThread(weewx.restx.RESTThread):
                  l1_v, l2_v, l3_v, grid_frequency_hz, 
                  plant_capacity_kwp, pv_forecast_kwh, 
                  smartmeter_model, integration_version,
-                 battery_soc_percent,
-                 grid_power_w,
-                 power_factor,
-                 apparent_power_va,
-                 l1_a,l2_a,l3_a,
-                 battery_capacity,
+                 battery_soc_percent='none',
+                 grid_power_w='none',
+                 power_factor='none',
+                 apparent_power_va='none',
+                 l1_a='none',l2_a='none',l3_a='none',
+                 battery_capacity='none',
                  server_url=RESTful.DEFAULT_URL,
                  skip_upload=False, manager_dict=None,
                  post_interval=300, max_backlog=sys.maxsize, stale=None,
@@ -208,14 +208,14 @@ class RESTThread(weewx.restx.RESTThread):
         self.freq_name = grid_frequency_hz
         try:
             # if the value is provided in the configuration
-            self.plant_capacity = float(plant_capacity_kwp)
+            self.plant_capacity = to_float(plant_capacity_kwp)
         except ValueError:
             # if the value is to be read from the record
             self.plant_capacity = plant_capacity_kwp
         self.forecast_name = pv_forecast_kwh
         try:
             # if the value is provided in the configuration
-            self.battery_capacity = float(battery_capacity)
+            self.battery_capacity = to_float(battery_capacity)
         except ValueError:
             # if the value is to be read from the record
             self.battery_capacity = battery_capacity
@@ -278,11 +278,11 @@ class RESTThread(weewx.restx.RESTThread):
                 if freq is not None:
                     body['grid_frequency_hz'] = round(freq,3)
             # installed PV power (optional)
-            if self.plant_capacity and self.plant_capacity.lower()!='none':
+            if self.plant_capacity:
                 if isinstance(self.plant_capacity,float):
                     # if the value is provided in the configuration
                     kwp = self.plant_capacity
-                elif self.plant_capacity in record:
+                elif self.plant_capacity.lower()!='none' and self.plant_capacity in record:
                     # if the value is to be read from the record
                     kwp = weewx.units.convert(weewx.units.as_value_tuple(record,self.plant_capacity),'kilowatt')[0]
                 else:
@@ -290,11 +290,11 @@ class RESTThread(weewx.restx.RESTThread):
                 if kwp is not None:
                     body['plant_capacity_kwp'] = round(kwp,1)
             # installed battery capacity (optional)
-            if self.battery_capacity and self.battery_capacity.lower()!='none':
+            if self.battery_capacity:
                 if isinstance(self.battery_capacity,float):
                     # if the value is provided in the configuration
                     bat = self.battery_capacity
-                elif self.battery_capacity in record:
+                elif self.battery_capacity.lower()!='none' and self.battery_capacity in record:
                     # if the value is to be read from the record
                     bat = weewx.units.convert(weewx.units.as_value_tuple(record,self.battery_capacity),'kilowatt_hour')[0]
                 else:
