@@ -1,14 +1,19 @@
 [Unit]
-Description=Ortsnetz-Auslastung E3/DC (eine Messung senden)
+Description=Ortsnetz-Auslastung E3/DC (Stichprobe lesen, alle 5 Minuten senden)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-# Maximale Laufzeit je Messung, passt zum MAX_LAUFZEIT_S im Script
+# Maximale Laufzeit je Stichprobe, passt zum MAX_LAUFZEIT_S im Script
 TimeoutStartSec=60s
 EnvironmentFile=/etc/ortsnetz-e3dc.env
 ExecStart=/usr/bin/python3 /opt/ortsnetz-e3dc/e3dc_ortsnetz.py
+
+# State-Datei für die Stichproben des Übertragungsintervalls.
+# DynamicUser und ProtectSystem=strict lassen nur /var/lib/ortsnetz-e3dc schreiben.
+StateDirectory=ortsnetz-e3dc
+Environment=STATE_DATEI=/var/lib/ortsnetz-e3dc/state.json
 
 # Läuft als unprivilegierter, temporärer Benutzer, nicht als root.
 # Script und Ordner gehören root und sind für diesen Benutzer nicht beschreibbar.

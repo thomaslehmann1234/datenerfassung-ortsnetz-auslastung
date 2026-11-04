@@ -2,22 +2,28 @@
 """
 e3dc_ortsnetz.py
 
-Liest die Phasenspannungen und die Netzfrequenz des Netzzählers (PM_TYPE_ROOT) eines
-E3/DC-Hauskraftwerks über das lokale RSCP-Protokoll und sendet die Messung an
-https://www.ortsnetz-auslastung.de/v1/measurements
+Liest die Phasenspannungen, die Netzfrequenz, die Netzleistung und den Ladezustand des
+Netzzählers (PM_TYPE_ROOT) eines E3/DC-Hauskraftwerks über das lokale RSCP-Protokoll und
+sendet die Messung an https://www.ortsnetz-auslastung.de/v1/measurements
 
 Benötigt Python 3.8 oder höher und das pye3dc-Modul:  pip install pye3dc
 
 Aufruf:
-    e3dc_ortsnetz.py            -> eine Messung senden und beenden
-    e3dc_ortsnetz.py --dry-run  -> eine Messung lesen und Payload nur ausgeben
+    e3dc_ortsnetz.py            -> Stichprobe lesen, alle 5 Minuten eine Messung senden
+    e3dc_ortsnetz.py --dry-run  -> Stichprobe lesen und Payload nur ausgeben
+
+Das Script wird im Minutentablauf gestartet (cron oder systemd-Timer). Jede Laufzeit
+liest eine Stichprobe und hängt sie an die State-Datei. Gesendet wird erst, wenn seit
+der letzten Annahme das Sendeintervall von 300 Sekunden vergangen ist. Aus den
+Stichproben desselben Intervalls werden die Min-, Max- und Durchschnittswerte der
+Spannungen und der Netzfrequenz gebildet.
 
 Die Konfiguration steht in Environment-Variablen oder in einer .env-Datei neben dem
 Script (siehe .env.example), nicht im Script selbst. Gesetzte Environment-Variablen
 haben Vorrang vor der .env-Datei.
 
 Exit-Codes:
-    0  Erfolg
+    0  Erfolg (Stichprobe gespeichert oder Messung gesendet)
     1  Konfiguration fehlt oder ist ungültig
     2  RSCP-Verbindung zum Hauskraftwerk gestört
     3  Keine plausible Messung (Zähler fehlt, Typ passt nicht, Spannungen unplausibel)
@@ -28,8 +34,13 @@ Exit-Codes:
 import argparse
 import http.client
 import json
+import math
 import os
+import re
+import shlex
 import signal
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -65,15 +76,36 @@ LONGITUDE = None        # z. B. 11.726477
 # zwingend vom Typ PM_TYPE_ROOT sein, sonst bricht das Script ab.
 METER_INDEX = None
 
-# Optional: installierte PV-Leistung in kWp, größer 0 und maximal 1000 (None = nicht übertragen)
+# Optional: installierte PV-Leistung in kWp, größer 0 und maximal 1000.
+# Leer lassen = die installierte Spitzenleistung des Kraftwerks wird benutzt.
 PLANT_CAPACITY_KWP = None
+
+# Optional: nutzbare Batteriespeicherkapazität in kWh, größer 0.
+# Leer lassen = die installierte Kapazität des Kraftwerks als Näherung.
+BATTERY_CAPACITY_KWH = None
+
+# Optional: PV-Tagesprognose in kWh aus einer Datei (evcc, Home Assistant, ioBroker)
+# oder aus einem Befehl, der die kWh-Zahl in die Standardsausgabe schreibt.
+# Beides leer = pv_forecast_kwh wird nicht übertragen.
+PV_FORECAST_DATEI = ""
+PV_FORECAST_BEFEHL = ""
+
+# Optional: freie Bezeichnung des Messgeräts. Leer lassen = Modell und Seriennummer
+# des Hauskraftwerks, wie sie pye3dc aus der Seriennummer erkennt.
+SMARTMETER_MODEL = ""
+
+# State-Datei für die Stichproben des Übertragungsintervalls. Leer = Standard
+# ~/.local/state/ortsnetz-e3dc/state.json, bei systemd /var/lib/ortsnetz-e3dc/state.json
+STATE_DATEI = ""
+
+# Sendeintervall in Sekunden. Die API erwartet 300, kürzer darf es nicht sein.
+SENDINTERVALL_S = 300
 
 # Alternative .env-Datei (Environment-Variable ENV_DATEI), Standard ist .env neben dem Script
 ENV_DATEI = None
 
 API_URL = "https://www.ortsnetz-auslastung.de/v1/measurements"
-INTEGRATION_VERSION = "e3dc-rscp-1.1"
-SMARTMETER_MODEL = "E3DC Hauskraftwerk"
+INTEGRATION_VERSION = "e3dc-rscp-1.2"
 
 # Maximale Laufzeit eines Aufrufs in Sekunden. Die RSCP-Timeouts begrenzen nur einzelne
 # Netzwerkoperationen; eine halb offene Verbindung würde den cron-/systemd-Lauf sonst
@@ -89,6 +121,20 @@ SPANNUNG_MAX = 300
 # Netzfrequenz außerhalb dieses Bereichs wird nicht übertragen (API erlaubt 45 bis 55 Hz)
 FREQUENZ_MIN = 45
 FREQUENZ_MAX = 55
+
+# Netzleistung außerhalb dieses Bereichs wird nicht übertragen
+LEISTUNG_MIN = -60000
+LEISTUNG_MAX = 60000
+
+# Stichproben älter als dieses Fenster werden verworfen, damit ein verschobener Timer
+# die Min/Max-Werte nicht mit Werten von vor einer halben Stunde füllt
+AUFBEWAHRUNG_S = 900
+
+# Höchstzahl der Stichproben in der State-Datei
+MAX_STICHPROBEN = 40
+
+# Bezeichnung, wenn das Kraftwerk kein Modell nennen kann
+AUSWICH_MODELL = "E3/DC Hauskraftwerk"
 
 # Zählertyp des Netzzählers, in allen pye3dc-Versionen gleich lautender Name
 WURZEL_TYP = "PM_TYPE_ROOT"
@@ -116,6 +162,11 @@ def log(text):
     print(f"{zeit} {text}", flush=True)
 
 
+def jetzt():
+    """Aktuelle Zeit als Unix-Zeitpunkt in Sekunden; in den Tests ersetzbar."""
+    return int(time.time())
+
+
 def laufzeit_begrenzen():
     """Beendet den Prozess mit Fehler, wenn er länger als MAX_LAUFZEIT_S läuft (nur Linux/Unix)."""
     if not hasattr(signal, "SIGALRM"):
@@ -132,7 +183,29 @@ def zahl(wert):
     """Liefert wert als float oder None, wenn es keine Zahl ist."""
     if isinstance(wert, bool) or not isinstance(wert, (int, float)):
         return None
+    if not math.isfinite(wert):
+        return None
     return float(wert)
+
+
+def zahl_aus_text(text):
+    """Liefert die Zahl in einem Text; JSON wird nach einem Prognoseschlüssel durchsucht."""
+    text = text.strip()
+    if not text:
+        return None
+    if text.startswith("{"):
+        try:
+            daten = json.loads(text)
+        except ValueError:
+            return None
+        for schluessel in ("pv_forecast_kwh", "pv_forecast", "kwh", "kWh", "forecast", "value"):
+            if schluessel in daten:
+                return zahl(daten[schluessel])
+        return None
+    treffer = re.search(r"[-+]?\d+(?:[.,]\d+)?", text)
+    if not treffer:
+        return None
+    return float(treffer.group().replace(",", "."))
 
 
 def env_datei_laden(pfad=None):
@@ -187,6 +260,8 @@ def einstellung(name, standard, umwandeln=str):
 def konfiguration_laden():
     global E3DC_HOST, E3DC_USERNAME, E3DC_PASSWORD, RSCP_KEY
     global LATITUDE, LONGITUDE, METER_INDEX, PLANT_CAPACITY_KWP
+    global BATTERY_CAPACITY_KWH, PV_FORECAST_DATEI, PV_FORECAST_BEFEHL
+    global SMARTMETER_MODEL, STATE_DATEI, SENDINTERVALL_S
 
     E3DC_HOST = einstellung("E3DC_HOST", E3DC_HOST)
     E3DC_USERNAME = einstellung("E3DC_USERNAME", E3DC_USERNAME)
@@ -196,6 +271,12 @@ def konfiguration_laden():
     LONGITUDE = einstellung("LONGITUDE", LONGITUDE, float)
     METER_INDEX = einstellung("METER_INDEX", METER_INDEX, int)
     PLANT_CAPACITY_KWP = einstellung("PLANT_CAPACITY_KWP", PLANT_CAPACITY_KWP, float)
+    BATTERY_CAPACITY_KWH = einstellung("BATTERY_CAPACITY_KWH", BATTERY_CAPACITY_KWH, float)
+    PV_FORECAST_DATEI = einstellung("PV_FORECAST_DATEI", PV_FORECAST_DATEI)
+    PV_FORECAST_BEFEHL = einstellung("PV_FORECAST_BEFEHL", PV_FORECAST_BEFEHL)
+    SMARTMETER_MODEL = einstellung("SMARTMETER_MODEL", SMARTMETER_MODEL)
+    STATE_DATEI = einstellung("STATE_DATEI", STATE_DATEI)
+    SENDINTERVALL_S = einstellung("SENDINTERVALL_S", SENDINTERVALL_S, int)
 
 
 def konfiguration_pruefen():
@@ -211,6 +292,96 @@ def konfiguration_pruefen():
         raise KonfigurationsFehler("METER_INDEX muss zwischen 0 und 7 liegen.")
     if PLANT_CAPACITY_KWP is not None and not 0 < PLANT_CAPACITY_KWP <= 1000:
         raise KonfigurationsFehler("PLANT_CAPACITY_KWP muss größer 0 und maximal 1000 sein.")
+    if BATTERY_CAPACITY_KWH is not None and not 0 < BATTERY_CAPACITY_KWH <= 2000:
+        raise KonfigurationsFehler("BATTERY_CAPACITY_KWH muss größer 0 und maximal 2000 sein.")
+    if SENDINTERVALL_S < 300:
+        raise KonfigurationsFehler(
+            "SENDINTERVALL_S darf nicht kleiner als 300 Sekunden sein (Sendeintervall der API).")
+
+
+def state_pfad():
+    """Liefert den Pfad der State-Datei: STATE_DATEI, sonst der XDG-Standard."""
+    if STATE_DATEI:
+        return STATE_DATEI
+    grund = os.environ.get("XDG_STATE_HOME", "").strip()
+    if not grund:
+        grund = os.path.join(os.path.expanduser("~"), ".local", "state")
+    return os.path.join(grund, "ortsnetz-e3dc", "state.json")
+
+
+def staat_lesen(pfad):
+    """Liefert {"last_send": Zeitpunkt oder None, "samples": [[Zeit, L1, L2, L3, f], ...]}.
+
+    Eine fehlende oder unlesbare State-Datei ist kein Fehler: ohne gespeicherte
+    Stichproben werden Min, Max und Mittelwert aus der aktuellen Stichprobe gebildet.
+    """
+    try:
+        with open(pfad, "r", encoding="utf-8") as objekt:
+            inhalt = json.load(objekt)
+    except FileNotFoundError:
+        return {"last_send": None, "samples": []}
+    except (OSError, ValueError) as fehler:
+        log(f"Warnung: State-Datei {pfad} ist unlesbar ({fehler}) – ohne gespeicherte Stichproben.")
+        return {"last_send": None, "samples": []}
+
+    proben = []
+    letzte = None
+    if isinstance(inhalt, dict):
+        for eintrag in inhalt.get("samples", []):
+            if not isinstance(eintrag, (list, tuple)) or len(eintrag) < 5:
+                continue
+            zeit = zahl(eintrag[0])
+            if zeit is None:
+                continue
+            proben.append([int(zeit), zahl(eintrag[1]), zahl(eintrag[2]), zahl(eintrag[3]), zahl(eintrag[4])])
+        letzte = zahl(inhalt.get("last_send"))
+        if letzte is not None:
+            letzte = int(letzte)
+    return {"last_send": letzte, "samples": proben}
+
+
+def staat_schreiben(pfad, proben, last_send):
+    """Schreibt die State-Datei atomar; ein Schreibfehler ist kein Abbruchgrund."""
+    ordner = os.path.dirname(pfad)
+    if ordner:
+        os.makedirs(ordner, mode=0o700, exist_ok=True)
+    daten = {"version": 1, "last_send": last_send, "samples": proben}
+    temp = f"{pfad}.tmp"
+    with open(temp, "w", encoding="utf-8") as objekt:
+        objekt.write(json.dumps(daten))
+    os.replace(temp, pfad)
+
+
+def stichproben_pruenen(proben, zeitpunkt):
+    """Liefert die Stichproben des Aufbewahrungsfensters, zeitlich aufsteigend."""
+    aktuell = [s for s in proben if zahl(s[0]) is not None]
+    aktuell = [s for s in aktuell if zeitpunkt - AUFBEWAHRUNG_S <= s[0] <= zeitpunkt]
+    aktuell.sort(key=lambda s: s[0])
+    return aktuell[-MAX_STICHPROBEN:]
+
+
+def stichproben_fenster(proben, zeitpunkt):
+    """Liefert die Stichproben desselben Übertragungsintervalls, also [Zeit - Intervall, Zeit]."""
+    return [s for s in proben if zeitpunkt - SENDINTERVALL_S <= s[0] <= zeitpunkt]
+
+
+def kennzahlen(proben, spalte):
+    """Liefert (min, max, avg) einer Stichprobenspalte oder None, wenn kein gültiger Wert da ist.
+
+    Fehlende Werte (None, in der API als -1) werden ignoriert, wie API.md es verlangt.
+    """
+    werte = [zahl(s[spalte]) for s in proben]
+    werte = [wert for wert in werte if wert is not None]
+    if not werte:
+        return None
+    return round(min(werte), 2), round(max(werte), 2), round(sum(werte) / len(werte), 2)
+
+
+def senden_faellig(last_send, zeitpunkt):
+    """True, wenn das Sendeintervall seit der letzten Annahme vergangen ist."""
+    if last_send is None:
+        return True
+    return zeitpunkt - last_send >= SENDINTERVALL_S
 
 
 def typname(eintrag):
@@ -321,7 +492,6 @@ def frequenz_lesen(daten, e3dc):
     if wert is None:
         wert = ac_frequenz_abrufen(e3dc)
     if wert is None:
-        log("Warnung: Netzfrequenz nicht verfügbar – grid_frequency_hz wird nicht übertragen.")
         return None
     wert = round(wert, 2)
     if not FREQUENZ_MIN <= wert <= FREQUENZ_MAX:
@@ -330,10 +500,154 @@ def frequenz_lesen(daten, e3dc):
     return wert
 
 
-def payload_erstellen(daten, e3dc, index, typ):
-    """Liefert den API-Payload aus einem Zählerdatensatz; wirft MesswertFehler bei unplausiblen Werten."""
-    # pye3dc bis 0.9.x liefert die Messwerte innerhalb eines "data"-Containers
-    daten = daten.get("data", daten)
+def netzleistung_abrufen(e3dc):
+    """Liefert die Wirkleistung am Hausanschluss in W (positiv = Bezug, negativ = Einspeisung).
+
+    `EMS_REQ_POWER_GRID` dokumentiert pye3dc als "absorption from grid in W", also
+    genau das Vorzeichen, das die API verlangt. Der Wert stammt vom Netzzähler-Pfad des
+    Kraftwerks und ist nicht die Leistung eines Wechselrichters.
+    """
+    if RscpTag is None:
+        return None
+    try:
+        wert = zahl(e3dc.sendRequestTag(RscpTag.EMS_REQ_POWER_GRID, keepAlive=True))
+    except Exception:
+        log("Warnung: Netzleistung nicht verfügbar – grid_power_w wird nicht übertragen.")
+        return None
+    if wert is None:
+        log("Warnung: Netzleistung nicht verfügbar – grid_power_w wird nicht übertragen.")
+        return None
+    if not LEISTUNG_MIN <= wert <= LEISTUNG_MAX:
+        log(f"Warnung: Netzleistung {wert} W ist unplausibel – grid_power_w wird nicht übertragen.")
+        return None
+    return round(wert, 1)
+
+
+def soc_abrufen(e3dc):
+    """Liefert den Ladezustand in Prozent (0 bis 100) oder None, wenn kein Speicher antwortet."""
+    if RscpTag is None:
+        return None
+    try:
+        wert = zahl(e3dc.sendRequestTag(RscpTag.EMS_REQ_BAT_SOC, keepAlive=True))
+    except Exception:
+        return None
+    if wert is None:
+        return None
+    wert = round(wert)
+    if not 0 <= wert <= 100:
+        log(f"Warnung: Ladezustand {wert} % ist unplausibel – battery_soc_percent wird nicht übertragen.")
+        return None
+    return wert
+
+
+def anlagen_groesse(e3dc):
+    """Liefert plant_capacity_kwp: Konfiguration hat Vorrang, sonst die installierte Spitzenleistung.
+
+    `installedPeakPower` nennt die installierte PV-Leistung in Watt; pye3dc liest sie
+    beim Verbindungsaufbau, ohne zusätzlichen RSCP-Aufruf.
+    """
+    if PLANT_CAPACITY_KWP is not None:
+        return PLANT_CAPACITY_KWP
+    wert = zahl(getattr(e3dc, "installedPeakPower", None))
+    if wert is None:
+        return None
+    kwp = round(wert / 1000, 1)
+    if not 0 < kwp <= 1000:
+        return None
+    return kwp
+
+
+def batteriekapazitaet_kwh(e3dc):
+    """Liefert battery_capacity in kWh: Konfiguration hat Vorrang, sonst die installierte Kapazität.
+
+    `installedBatteryCapacity` ist die installierte, nicht die nutzbare Kapazität.
+    `BAT_REQ_USABLE_CAPACITY` wäre in Amperestunden und nur mit der Batteriespannung
+    in kWh umrechnbar – eine Schätzung, die API.md nicht will. Deshalb ist der
+    Konfigurationswert BATTERY_CAPACITY_KWH genauer und hat Vorrang.
+    """
+    if BATTERY_CAPACITY_KWH is not None:
+        return BATTERY_CAPACITY_KWH
+    wert = zahl(getattr(e3dc, "installedBatteryCapacity", None))
+    if wert is None:
+        return None
+    kwh = round(wert / 1000, 1)
+    if kwh <= 0:
+        return None
+    return kwh
+
+
+def zaehlerbezeichnung(e3dc):
+    """Liefert smartmeter_model: Konfiguration hat Vorrang, sonst Modell und Seriennummer."""
+    if SMARTMETER_MODEL:
+        return SMARTMETER_MODEL[:120]
+    anteile = ["E3/DC"]
+    modell = getattr(e3dc, "model", None)
+    if isinstance(modell, str) and modell.strip():
+        anteile.append(modell.strip())
+    seriennummer = getattr(e3dc, "serialNumber", None)
+    if isinstance(seriennummer, str) and seriennummer.strip():
+        anteile.append(seriennummer.strip())
+    if len(anteile) == 1:
+        return AUSWICH_MODELL
+    return " ".join(anteile)[:120]
+
+
+def pv_forecast_lesen(kapazitaet):
+    """Liefert pv_forecast_kwh aus Prognosedatei oder Prognosebefehl, sonst None.
+
+    Die API verlangt eine gespeicherte oder mitgesendete Anlagengröße und verwirft bei
+    mehr als 10 kWh je kWp pro Tag die gesamte Messung mit HTTP 422. Deshalb wird ein
+    Wert ohne Anlagengröße oder über der Grenze gar nicht erst gesendet.
+    """
+    wert = None
+    quelle = None
+    if not PV_FORECAST_DATEI and not PV_FORECAST_BEFEHL:
+        return None
+    if PV_FORECAST_DATEI:
+        quelle = PV_FORECAST_DATEI
+        try:
+            with open(PV_FORECAST_DATEI, "r", encoding="utf-8") as objekt:
+                wert = zahl_aus_text(objekt.read())
+        except OSError as fehler:
+            log(f"Warnung: Prognosedatei {PV_FORECAST_DATEI} ist nicht lesbar ({fehler}).")
+            return None
+    elif PV_FORECAST_BEFEHL:
+        quelle = PV_FORECAST_BEFEHL
+        try:
+            ablauf = subprocess.run(shlex.split(PV_FORECAST_BEFEHL), capture_output=True,
+                                    text=True, timeout=15)
+        except (OSError, ValueError, subprocess.TimeoutExpired) as fehler:
+            log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} fehlgeschlagen ({fehler}).")
+            return None
+        if ablauf.returncode != 0:
+            log(f"Warnung: Prognosebefehl {PV_FORECAST_BEFEHL} mit Exit {ablauf.returncode}.")
+            return None
+        wert = zahl_aus_text(ablauf.stdout)
+    if wert is None:
+        log(f"Warnung: Prognosequelle {quelle} nennt keine kWh-Zahl – pv_forecast_kwh weggelassen.")
+        return None
+    wert = round(wert, 1)
+    if not 0 <= wert <= 100000:
+        log(f"Warnung: PV-Prognose {wert} kWh ist außerhalb von 0 bis 100000 – weggelassen.")
+        return None
+    if kapazitaet is None:
+        log("Warnung: PV-Prognose ohne bekannte Anlagengröße wird nicht gesendet (API: HTTP 422).")
+        return None
+    grenze = 10 * kapazitaet
+    if wert > grenze:
+        log(f"Warnung: PV-Prognose {wert} kWh überschreitet {grenze} kWh (10 kWh je kWp) – weggelassen.")
+        return None
+    return wert
+
+
+def messdaten_flach(daten):
+    """Liefert die Messwerte; pye3dc bis 0.9.x hält sie in einem "data"-Unterordner."""
+    return daten.get("data", daten)
+
+
+def messwerte(daten):
+    """Liefert die Spannungen L1, L2, L3 aus einem Zählerdatensatz; L1 muss plausibel sein."""
+    daten = messdaten_flach(daten)
 
     l1 = spannung(daten, 1)
     if l1 is None:
@@ -341,35 +655,107 @@ def payload_erstellen(daten, e3dc, index, typ):
             f"L1: keine plausible Spannung (voltage L1 = {daten.get('voltage')}, "
             f"erwartet {SPANNUNG_MIN} bis {SPANNUNG_MAX} V)."
         )
-
     # Der Netzzähler meldet nicht gemessene Phasen mit 0 V; die API erwartet dann -1
-    l2 = spannung(daten, 2)
-    l3 = spannung(daten, 3)
-    l2 = -1 if l2 is None else l2
-    l3 = -1 if l3 is None else l3
+    return {"l1": l1, "l2": spannung(daten, 2), "l3": spannung(daten, 3)}
+
+
+def messlauf_erstellen(daten, e3dc, index, typ):
+    """Liefert alle Werte einer Laufzeit: Spannungen, Frequenz, Netzleistung, SOC und Standortangaben."""
+    flach = messdaten_flach(daten)
+    werte = messwerte(flach)
+    return {
+        "index": index,
+        "typ": typ,
+        "l1": werte["l1"],
+        "l2": werte["l2"],
+        "l3": werte["l3"],
+        "freq": frequenz_lesen(flach, e3dc),
+        "power": netzleistung_abrufen(e3dc),
+        "soc": soc_abrufen(e3dc),
+        "kapazitaet": anlagen_groesse(e3dc),
+        "batteriekapazitaet": batteriekapazitaet_kwh(e3dc),
+        "modell": zaehlerbezeichnung(e3dc),
+    }
+
+
+def stichprobe_erstellen(lauf, zeitpunkt):
+    """Liefert die Stichprobe [Zeit, L1, L2, L3, Frequenz] für die State-Datei.
+
+    Nur die Werte mit Min/Max-Mitteln werden über das Intervall gesammelt; Netzleistung
+    und Ladezustand haben keine Kennzahlen und werden bei der Sendung aktuell gelesen.
+    """
+    return [zeitpunkt, lauf["l1"], lauf["l2"], lauf["l3"], lauf["freq"]]
+
+
+def payload_erstellen(stichprobe, fenster, lauf, forecast):
+    """Liefert den API-Payload; wirft MesswertFehler bei unplausiblen Werten."""
+    zeitpunkt, l1, l2, l3, freq = stichprobe
+    if l1 is None:
+        raise MesswertFehler(f"L1: keine plausible Spannung (Stichprobe {stichprobe}).")
 
     payload = {
-        "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "observed_at": datetime.fromtimestamp(zeitpunkt, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
         "l1_v": l1,
-        "l2_v": l2,
-        "l3_v": l3,
-        "smartmeter_model": SMARTMETER_MODEL,
+        # Nicht gemessene Phasen kennzeichnet die API mit -1; ebenso ihre Kennzahlen
+        "l2_v": -1 if l2 is None else l2,
+        "l3_v": -1 if l3 is None else l3,
+        "smartmeter_model": lauf["modell"],
         "integration_version": INTEGRATION_VERSION,
     }
 
-    f = frequenz_lesen(daten, e3dc)
-    if f is not None:
-        payload["grid_frequency_hz"] = f
+    for phase, spalte in (("l1", 1), ("l2", 2), ("l3", 3)):
+        ken = kennzahlen(fenster, spalte)
+        payload[f"{phase}_v_min"] = ken[0] if ken else -1
+        payload[f"{phase}_v_max"] = ken[1] if ken else -1
+        payload[f"{phase}_v_avg"] = ken[2] if ken else -1
 
-    if PLANT_CAPACITY_KWP is not None:
-        payload["plant_capacity_kwp"] = PLANT_CAPACITY_KWP
+    if freq is not None:
+        payload["grid_frequency_hz"] = freq
+    ken = kennzahlen(fenster, 4)
+    if ken:
+        payload["grid_frequency_hz_min"] = ken[0]
+        payload["grid_frequency_hz_max"] = ken[1]
+        payload["grid_frequency_hz_avg"] = ken[2]
 
-    log(f"Benutzter Zähler: Index {index} Typ {typ or 'unbekannt'} | "
+    if lauf["power"] is not None:
+        payload["grid_power_w"] = lauf["power"]
+    if lauf["soc"] is not None:
+        payload["battery_soc_percent"] = lauf["soc"]
+    if lauf["kapazitaet"] is not None:
+        payload["plant_capacity_kwp"] = lauf["kapazitaet"]
+    if lauf["batteriekapazitaet"] is not None:
+        payload["battery_capacity"] = lauf["batteriekapazitaet"]
+    if forecast is not None:
+        payload["pv_forecast_kwh"] = forecast
+
+    anzahl = f"{len(fenster)} Stichprobe" + ("n" if len(fenster) > 1 else "")
+    log(f"Benutzter Zähler: Index {lauf['index']} Typ {lauf['typ'] or 'unbekannt'} | "
         f"L1={payload['l1_v']} L2={payload['l2_v']} L3={payload['l3_v']} V | "
-        f"f={payload.get('grid_frequency_hz', '-')} Hz")
+        f"f={payload.get('grid_frequency_hz', '-')} Hz | "
+        f"P={payload.get('grid_power_w', '-')} W | SOC={payload.get('battery_soc_percent', '-')} % | "
+        f"{anzahl} im Intervall")
     return payload
+
+
+def antwort_auswerten(antwort):
+    """Loggt Ampel, Speicherladeempfehlung und Redispatch; fehlende Felder werden ignoriert."""
+    if not isinstance(antwort, dict):
+        return
+    status = antwort.get("status")
+    if isinstance(status, dict):
+        phasen = " ".join(f"{phase}={status.get(phase) or '-'}" for phase in ("l1", "l2", "l3"))
+        log(f"Ampel: {phasen} | gesamt={status.get('overall') or '-'}")
+    empfehlung = antwort.get("storage_recommendation")
+    if isinstance(empfehlung, str) and empfehlung:
+        log(f"Speicherladeempfehlung: {empfehlung}.")
+    redispatch = antwort.get("redispatch")
+    if isinstance(redispatch, dict):
+        log(f"Redispatch: active={redispatch.get('active')} "
+            f"affected_units={redispatch.get('affected_units')} "
+            f"active_measures={redispatch.get('active_measures')} "
+            f"data_updated_at={redispatch.get('data_updated_at')}")
 
 
 def senden(payload):
@@ -397,6 +783,7 @@ def senden(payload):
         if not isinstance(antwort_json, dict) or antwort_json.get("accepted") is not True:
             raise ApiFehler(f"HTTP 202 ohne Annahmebestätigung: {text}")
         log(f"Übertragen ({payload['observed_at']}): HTTP 202, Messung angenommen.")
+        antwort_auswerten(antwort_json)
     elif status == 403:
         raise ApiFehler(f"HTTP 403 – der Standort ist für die Annahme gesperrt: {text}")
     elif status == 422:
@@ -407,7 +794,7 @@ def senden(payload):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="E3/DC-Messwerte an Ortsnetz-Auslastung senden.")
-    parser.add_argument("--dry-run", action="store_true", help="Messung lesen und Payload nur ausgeben")
+    parser.add_argument("--dry-run", action="store_true", help="Stichprobe lesen und Payload nur ausgeben")
     args = parser.parse_args(argv)
 
     try:
@@ -432,11 +819,11 @@ def main(argv=None):
         log(f"FEHLER: RSCP-Verbindung zu {E3DC_HOST} fehlgeschlagen: {fehler}")
         return EXIT_RSCP
 
-    payload = None
+    lauf = None
     try:
         index, typ = netzhaehler_finden(e3dc)
         daten = e3dc.get_powermeter_data(pmIndex=index, keepAlive=True)
-        payload = payload_erstellen(daten, e3dc, index, typ)
+        lauf = messlauf_erstellen(daten, e3dc, index, typ)
     except MesswertFehler as fehler:
         log(f"FEHLER: {fehler}")
         return EXIT_MESSUNG
@@ -449,11 +836,30 @@ def main(argv=None):
         except Exception:
             pass
 
-    if payload is None:
+    if lauf is None:
         return EXIT_MESSUNG
+
+    zeitpunkt = jetzt()
+    pfad = state_pfad()
+    staat = staat_lesen(pfad)
+    proben = stichproben_pruenen(staat["samples"] + [stichprobe_erstellen(lauf, zeitpunkt)], zeitpunkt)
+    fenster = stichproben_fenster(proben, zeitpunkt)
+    forecast = pv_forecast_lesen(lauf["kapazitaet"])
+    payload = payload_erstellen(stichprobe_erstellen(lauf, zeitpunkt), fenster, lauf, forecast)
 
     if args.dry_run:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+
+    try:
+        # Stichprobe zuerst sichern, damit ein Sendefehler die gesammelten Werte nicht kostet
+        staat_schreiben(pfad, proben, staat["last_send"])
+    except OSError as fehler:
+        log(f"Warnung: State-Datei {pfad} konnte nicht geschrieben werden ({fehler}).")
+
+    if not senden_faellig(staat["last_send"], zeitpunkt):
+        rest = SENDINTERVALL_S - (zeitpunkt - (staat["last_send"] or zeitpunkt))
+        log(f"Stichprobe gespeichert, Senden erst in {max(rest, 0)} s.")
         return 0
 
     try:
@@ -461,6 +867,11 @@ def main(argv=None):
     except ApiFehler as fehler:
         log(f"FEHLER: {fehler}")
         return EXIT_API
+
+    try:
+        staat_schreiben(pfad, proben, zeitpunkt)
+    except OSError as fehler:
+        log(f"Warnung: State-Datei {pfad} konnte nicht geschrieben werden ({fehler}).")
 
     return 0
 
