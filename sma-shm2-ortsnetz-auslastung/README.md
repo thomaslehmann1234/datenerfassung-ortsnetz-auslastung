@@ -131,6 +131,7 @@ Ohne eigenes Image: Das offizielle `python:3.13-alpine` führt das Script direkt
 - `ORTSNETZ_INTERFACE_IP` ist auf TrueNAS praktisch immer nötig: Jede App bekommt eine eigene Docker-Bridge, der Host hat dadurch viele Interfaces.
 - Erst testen: `command` vorübergehend auf `["sh", "-c", "python3 -u /app/ortsnetz-sma-shm2.py --dry-run; sleep 600"]` und `restart: "no"` setzen. Das `sleep` hält den Container am Leben, damit die Ausgabe unter **Apps → ortsnetz-auslastung → Logs** lesbar bleibt.
 - Script aktualisieren: Datei im Dataset ersetzen und die App neu starten.
+- Andere Python-Scripts aus diesem Repo lassen sich nach demselben Muster betreiben. Scripts, die für cron gedacht sind, brauchen im `command` eine Schleife, z. B. `["sh", "-c", "while true; do python3 -u /app/script.py; sleep 300; done"]`. `network_mode: host` ist nur für den SMA-Multicast nötig.
 
 ## Dekodierte Messwerte
 
