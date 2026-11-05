@@ -11,3 +11,4 @@ Of course, you’ll need a Go E Wallbox—all models are compatible with the app
 No password is required; Node-RED handles that.
 Every 5 minutes, the data from L1, L2, and L3 (in volts) is transmitted, along with a timestamp and the grid frequency, as well as fixed parameters such as the device name and, of course, the LOCATION.
 These parameters must be adjusted in the JavaScript script within the Node function!
+Starting from the square bracket, the JavaScript script must then be imported into Node-RED 
