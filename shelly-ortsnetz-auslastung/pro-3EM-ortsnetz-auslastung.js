@@ -31,28 +31,42 @@ function validFrequency(value) {
 function reportResult(result, errorCode, errorMessage) {
   if (errorCode !== 0) {
     console.log("Ortsnetz request failed: " + errorMessage);
-    return;
+    return false;
   }
-  if (result.code < 200 || result.code >= 300) {
-    console.log("Ortsnetz API returned HTTP " + result.code);
+  if (!result || typeof result.code !== "number" || result.code < 200 || result.code >= 300) {
+    console.log("Ortsnetz API returned HTTP " + (!result ? "unknown" : result.code));
+    return false;
   }
+  return true;
 }
 
 function sendMeasurement() {
 	let em = Shelly.getComponentStatus("em:0");
-	if (em === null || !validVoltage(em.a_voltage) || !validVoltage(em.b_voltage) || !validVoltage(em.c_voltage)) {
-		console.log("Ortsnetz: voltage is unavailable or outside 150-300 V");
+	if (em === null) {
+		console.log("Ortsnetz: no phase voltage is available");
 		return;
 	}
+
+	let l1Voltage = validVoltage(em.a_voltage) ? em.a_voltage : -1;
+	let l2Voltage = validVoltage(em.b_voltage) ? em.b_voltage : -1;
+	let l3Voltage = validVoltage(em.c_voltage) ? em.c_voltage : -1;
+	if (l1Voltage === -1 && l2Voltage === -1 && l3Voltage === -1) {
+		console.log("Ortsnetz: no valid phase voltage is available (150-300 V)");
+		return;
+	}
+
+	let gridFrequency = l1Voltage !== -1 && validFrequency(em.a_freq) ? em.a_freq :
+		(l2Voltage !== -1 && validFrequency(em.b_freq) ? em.b_freq :
+			(l3Voltage !== -1 && validFrequency(em.c_freq) ? em.c_freq : null));
 	
 	let payload = {
 		observed_at: new Date().toISOString(),
 		latitude: CONFIG.latitude,
 		longitude: CONFIG.longitude,
-		l1_v: em.a_voltage,
-		l2_v: em.b_voltage,
-		l3_v: em.c_voltage,
-		grid_frequency_hz: validFrequency(em.a_freq) ? em.a_freq : null,
+		l1_v: l1Voltage,
+		l2_v: l2Voltage,
+		l3_v: l3Voltage,
+		grid_frequency_hz: gridFrequency,
 		smartmeter_model: CONFIG.smartmeterModel,
 		integration_version: "shelly-" + VERSION
 	};
@@ -73,11 +87,9 @@ function sendMeasurement() {
 		  body: payload_body,
 		},
 		function (result, err_code, err_message) {
-			if (err_code !== 0) {
-				print(err_message);
-				reportResult(result, err_code, err_message);
+			if (reportResult(result, err_code, err_message)) {
+				console.log("Pushed result", JSON.stringify(result));
 			}
-			console.log("Pushed result", JSON.stringify(result));
 		}
 		);
 	} catch (e) {
