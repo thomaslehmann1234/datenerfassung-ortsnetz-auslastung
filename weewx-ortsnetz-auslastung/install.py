@@ -26,9 +26,18 @@ CONFIG = """[StdRESTful]
         l3_v = pmGridVoltageL3
         grid_frequency_hz = heataccuMainsFrequency
         plant_capacity_kwp = installedPVPeakPower
-        # name of the observation type to get a forecast form
+        # name of the observation type to get a forecast from
         # (optional, default no value)
         #pv_forecast_kwh = replace_me
+        # additional optional data
+        battery_soc_percent = emsBatteryCharge
+        grid_power_w = emsGridPower
+        power_factor = none
+        apparent_power_va = none
+        l1_a = none
+        l2_a = none
+        l3_a = none
+        battery_capacity = installedBatteryCapacity
 """
 
 def loader():
@@ -37,7 +46,7 @@ def loader():
 class OrtsnetzInstaller(ExtensionInstaller):
     def __init__(self):
         super(OrtsnetzInstaller, self).__init__(
-            version="0.1",
+            version="0.2",
             name='Ortsnetz-Auslastung',
             description='upload grid voltages and frequency to the Ortsnetz-Auslastung project',
             author="Johanna Karen Roedenbeck",

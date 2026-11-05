@@ -52,6 +52,11 @@
    https://www.ortsnetz-auslastung.de/
    https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung
    
+   According to the API documentation the response status can be:
+   - 202 Accepted
+   - 422 Unprocessable Entity
+   - 403 Forbidden
+
 """
 
 import queue
@@ -68,8 +73,9 @@ import weewx.units
 from weeutil.weeutil import to_bool, to_int, to_float
 import weewx.xtypes
 from weeutil.weeutil import TimeSpan
+from weewx.restx import FailedPost
 
-VERSION = "0.1"
+VERSION = "0.2"
 
 import weeutil.logger
 import logging
@@ -113,6 +119,15 @@ class RESTful(weewx.restx.StdRESTful):
             site_dict.setdefault('pv_forecast_kwh',None)
             site_dict.setdefault('smartmeter_model',None)
             site_dict.setdefault('integration_version','WeeWX %s, uploader %s' % (weewx.__version__,VERSION))
+            # optional data
+            site_dict.setdefault('battery_soc_percent','emsBatteryCharge')
+            site_dict.setdefault('grid_power_w','emsGridPower')
+            site_dict.setdefault('power_factor',None)
+            site_dict.setdefault('apparent_power_va',None)
+            site_dict.setdefault('l1_a',None)
+            site_dict.setdefault('l2_a',None)
+            site_dict.setdefault('l3_a',None)
+            site_dict.setdefault('battery_capacity','installedBatteryCapacity')
         except (ValueError,TypeError,IndexError) as e:
             logerr("longitude latitude %s" % e)
 
@@ -141,11 +156,21 @@ class RESTThread(weewx.restx.RESTThread):
                  l1_v, l2_v, l3_v, grid_frequency_hz, 
                  plant_capacity_kwp, pv_forecast_kwh, 
                  smartmeter_model, integration_version,
+                 battery_soc_percent='none',
+                 grid_power_w='none',
+                 power_factor='none',
+                 apparent_power_va='none',
+                 l1_a='none',l2_a='none',l3_a='none',
+                 battery_capacity='none',
                  server_url=RESTful.DEFAULT_URL,
                  skip_upload=False, manager_dict=None,
                  post_interval=300, max_backlog=sys.maxsize, stale=None,
                  log_success=True, log_failure=True,
                  timeout=60, max_tries=3, retry_wait=5,
+                 retry_login=3600,
+                 retry_ssl=3600,
+                 softwaretype="weewx-%s" % weewx.__version__,
+                 delay_post=None,
                  log_url=False):
         """ initialize thread
         """
@@ -162,7 +187,11 @@ class RESTThread(weewx.restx.RESTThread):
                                           max_tries=max_tries,
                                           timeout=timeout,
                                           retry_wait=retry_wait,
-                                          skip_upload=skip_upload)
+            retry_login=retry_login,
+            retry_ssl=retry_ssl,
+            softwaretype=softwaretype,
+            delay_post=delay_post,
+            skip_upload=skip_upload)
         self.formatter=weewx.units.Formatter()
         # where to upload
         self.server_url = server_url
@@ -177,8 +206,26 @@ class RESTThread(weewx.restx.RESTThread):
         self.l2_name = l2_v
         self.l3_name = l3_v
         self.freq_name = grid_frequency_hz
-        self.kwp_name = plant_capacity_kwp
+        try:
+            # if the value is provided in the configuration
+            self.plant_capacity = to_float(plant_capacity_kwp)
+        except ValueError:
+            # if the value is to be read from the record
+            self.plant_capacity = plant_capacity_kwp
         self.forecast_name = pv_forecast_kwh
+        try:
+            # if the value is provided in the configuration
+            self.battery_capacity = to_float(battery_capacity)
+        except ValueError:
+            # if the value is to be read from the record
+            self.battery_capacity = battery_capacity
+        self.fields = [
+            ('battery_soc_percent',battery_soc_percent,'percent'),
+            ('grid_power_w',grid_power_w,'watt'),
+            ('power_factor',power_factor,None),
+            ('apparent_power_va',apparent_power_va,'watt'),
+            ('l1_a',l1_a,'amp'),('l2_a',l2_a,'amp'),('l3_a',l3_a,'amp')
+        ]
         # measuring device and software version
         self.smartmeter_model = smartmeter_model
         self.integration_version = integration_version
@@ -231,10 +278,29 @@ class RESTThread(weewx.restx.RESTThread):
                 if freq is not None:
                     body['grid_frequency_hz'] = round(freq,3)
             # installed PV power (optional)
-            if self.kwp_name and self.kwp_name.lower()!='none' and self.kwp_name in record:
-                kwp = weewx.units.convert(weewx.units.as_value_tuple(record,self.kwp_name),'kilowatt')[0]
+            if self.plant_capacity:
+                if isinstance(self.plant_capacity,float):
+                    # if the value is provided in the configuration
+                    kwp = self.plant_capacity
+                elif self.plant_capacity.lower()!='none' and self.plant_capacity in record:
+                    # if the value is to be read from the record
+                    kwp = weewx.units.convert(weewx.units.as_value_tuple(record,self.plant_capacity),'kilowatt')[0]
+                else:
+                    kwp = None
                 if kwp is not None:
                     body['plant_capacity_kwp'] = round(kwp,1)
+            # installed battery capacity (optional)
+            if self.battery_capacity:
+                if isinstance(self.battery_capacity,float):
+                    # if the value is provided in the configuration
+                    bat = self.battery_capacity
+                elif self.battery_capacity.lower()!='none' and self.battery_capacity in record:
+                    # if the value is to be read from the record
+                    bat = weewx.units.convert(weewx.units.as_value_tuple(record,self.battery_capacity),'kilowatt_hour')[0]
+                else:
+                    bat = None
+                if bat is not None:
+                    body['battery_capacity'] = round(bat,1)
             # forecast (optional)
             if self.forecast_name and self.forecast_name.lower()!='none' and self.forecast_name in record:
                 kwh = weewx.units.convert(weewx.units.as_value_tuple(record,self.forecast_name),'kilowatt_hour')[0]
@@ -246,6 +312,16 @@ class RESTThread(weewx.restx.RESTThread):
             # software that collects and posts data
             if self.integration_version:
                 body['integration_version'] = self.integration_version
+            # additional optional data
+            for field in self.fields:
+                if field[1] and field[1].lower()!='none' and field[1] in record:
+                    if field[2]:
+                        x = weewx.units.convert(weewx.units.as_value_tuple(record,field[1]),field[2])[0]
+                    else:
+                        x = record[field[1]]
+                    if x is not None:
+                        if isinstance(x,float): x = round(x,1)
+                        body[field[0]] = x
         except (LookupError, AttributeError, ArithmeticError, ValueError, TypeError) as e:
             raise weewx.restx.FailedPost('invalid data %s' % e)
         # convert to JSON
@@ -259,6 +335,57 @@ class RESTThread(weewx.restx.RESTThread):
             loginf(body)
         # return data and MIME type
         return body, 'application/json'
-    
+
+    def check_response(self, response):
+        """ Process response in case of success
+
+            Note: This method is called for status 200 to 299 only. In case
+                  of failure, it is not called. A logging message about
+                  success or failure is created by the system. It is not
+                  required here.
+        """
+        # Status logging (should always be "202 Accepted" here)
+        if self.log_url:
+            loginf('Received status: %s %s' % (response.status, response.reason))
+        # get the reply, a JSON object
+        try:
+            reply = json.loads(response.read(512))
+        except (ValueError,TypeError) as e:
+            # Note: json.JSONDecodeError is a subclass of ValueError
+            if self.log_failure:
+                logerr('Error decoding reply: %s %s' % (e.__class__.__name__,e))
+            return
+        # Log the reply in case data logging is requested
+        if self.log_url:
+            loginf('Received data: %s' % reply)
+        # Report if "accepted" or "created" are not `True`
+        # (In case the reply does not contain the fields "accepted" and/or
+        # "created" we do not know and therefore do not report anything.)
+        if not reply.get('accepted',True):
+            raise FailedPost('The server received the record successfully but did not accept it.')
+        if not reply.get('created',True):
+            raise FailedPost('The server could not process the record.')
+        #TODO: further process reply
+        """
+        The reply could look like this:
+        {
+          "accepted": true,
+          "created": true,
+          "status": {
+            "l1": "green",
+            "l2": "green",
+            "l3": "green",
+            "overall": "green"
+          },
+          "storage_recommendation": "none",
+          "redispatch": {
+            "active": null,
+            "affected_units": null,
+            "active_measures": null,
+            "data_updated_at": null
+          }
+        }
+        """
+
 
 loginf("version %s" % VERSION)

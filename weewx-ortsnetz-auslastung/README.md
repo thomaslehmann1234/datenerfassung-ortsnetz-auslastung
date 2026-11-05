@@ -91,6 +91,15 @@ The configuration section in `weewx.conf` looks like this:
         # name of the observation type to get a forecast form
         # (optional, default no value)
         #pv_forecast_kwh = replace_me
+        # additional optional data
+        battery_soc_percent = emsBatteryCharge
+        grid_power_w = emsGridPower
+        power_factor = none
+        apparent_power_va = none
+        l1_a = none
+        l2_a = none
+        l3_a = none
+        battery_capacity = installedBatteryCapacity
 
 ...
 [Engine]
@@ -110,6 +119,12 @@ The configuration section in `weewx.conf` looks like this:
   measures the grid voltages.
 * `integration_version`: Normally you do **not** need this key. The 
   default is enough. Set it only, if you really know what you do.
+* `plant_capacity_kwp`: Set it to the name of the observation type that
+  provides the nominal power of the PV system or set it to the value
+  of the nominal power of the PV system in kWp (kilowatt peak).
+* `battery_capacity`: Set it ot the name of the observation type that
+  provides the nominal capacity of the battery or set it to the value
+  of the nominal capacity of the battery in kWh (kilowatt-hours).
 * `l1_v`, `l2_v`, `l3_v`: Names of the observation types of the grid
   voltages. Mandatory. If you have a one phase system, set `l2_v` and 
   `l3_v` to `none`.
@@ -118,6 +133,14 @@ The configuration section in `weewx.conf` looks like this:
   provide the frequency.
 * `pv_forecast_kwh`: Name of the observation type that provides a 
   forecast of the daily earnings. Optional. Default is not provided.
+
+## Privacy
+
+While grid voltages and grid frequency are not personally linked to you,
+values like grid power, phase currents, and SOC are. You have to trust
+the project maintainers that they do not misuse or sell this data. If
+you do not want to send the additional values for privacy reasons,
+set them to `none` like in `grid_power_w = none`. They are omitted then.
 
 ## Tests
 
