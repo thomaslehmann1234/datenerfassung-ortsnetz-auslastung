@@ -1,92 +1,160 @@
 // Shelly Pro 3EM / Pro 3EM-400 script for Ortsnetz-Auslastung.
 // https://www.ortsnetz-auslastung.de/
-// Set the four values in CONFIG before enabling the script.
-// Datei: PostData_ShellyPro3EM_ortsnetz-auslastung_V011_200926.txt
-// Autor: Thomas Lehmann / Juergen Gensicke
-// https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung
-// VERSION = "0.1.1" vom 20.09.26
-// IP: 192.168.x.y
+// Authors: Thomas Lehmann / Juergen Gensicke
+// Version 0.1.3, 2026-11-13. Configure latitude and longitude before starting.
+// Samples stay in RAM; one measurement is sent after each five-minute interval.
 
-// for Debugg:
-const log_c = 0; // log_c = 1 heisst, es werden Infos in die Konsole ausgegeben.
+const log_c = 0;
 
 let CONFIG = {
   apiUrl: "https://www.ortsnetz-auslastung.de/v1/measurements",
-  latitude: 0,
-  longitude: 0,
+  latitude: null,
+  longitude: null,
+  capacity: null, // Optional installed PV capacity in kWp; null = omit.
+  battery: null, // Optional usable battery capacity in kWh; null = omit.
   smartmeterModel: "Shelly Pro 3EM",
-  intervalMs: 300000
+  version: "0.1.3",
+  SendIntervalMs: 300000,
+  PeakIntervalMs: 15000,
+  PRO3EMCT: 120 // 120 for 120 A CTs, 400 for 400 A CTs.
 };
 
-let VERSION = "0.1.1";
+let SendCounter = 0;
+let statistics = newStatistics();
+
+function finiteNumber(value) {
+  return typeof value === "number" && value > -Infinity && value < Infinity;
+}
 
 function validVoltage(value) {
-  return typeof value === "number" && value >= 150 && value <= 300;
+  return finiteNumber(value) && value >= 150 && value <= 300;
+}
+
+function validCurrent(value) {
+  return finiteNumber(value) && value >= 0 && value <= CONFIG.PRO3EMCT;
 }
 
 function validFrequency(value) {
-  return typeof value === "number" && value >= 45 && value <= 55;
+  return finiteNumber(value) && value >= 45 && value <= 55;
+}
+
+function rounded(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function newStatistics() {
+  return [
+    { min: null, max: null, sum: 0, count: 0 },
+    { min: null, max: null, sum: 0, count: 0 },
+    { min: null, max: null, sum: 0, count: 0 }
+  ];
+}
+
+function collectVoltage(index, value) {
+  if (!validVoltage(value)) return;
+  value = rounded(value);
+  let stats = statistics[index];
+  if (stats.count === 0 || value < stats.min) stats.min = value;
+  if (stats.count === 0 || value > stats.max) stats.max = value;
+  stats.sum += value;
+  stats.count += 1;
 }
 
 function reportResult(result, errorCode, errorMessage) {
   if (errorCode !== 0) {
     console.log("Ortsnetz request failed: " + errorMessage);
-    return;
+    return false;
   }
-  if (result.code < 200 || result.code >= 300) {
-    console.log("Ortsnetz API returned HTTP " + result.code);
+  if (!result || result.code !== 202) {
+    console.log("Ortsnetz API returned HTTP " + (result ? result.code : "unknown"));
+    return false;
   }
+  let response;
+  try {
+    response = JSON.parse(result.body);
+  } catch (error) {
+    console.log("Ortsnetz: invalid API response");
+    return false;
+  }
+  if (!response || response.accepted !== true) {
+    console.log("Ortsnetz: API did not confirm acceptance");
+    return false;
+  }
+  console.log("Ortsnetz: measurement accepted (HTTP 202)");
+  return true;
 }
 
 function sendMeasurement() {
-	let em = Shelly.getComponentStatus("em:0");
-	if (em === null || !validVoltage(em.a_voltage) || !validVoltage(em.b_voltage) || !validVoltage(em.c_voltage)) {
-		console.log("Ortsnetz: voltage is unavailable or outside 150-300 V");
-		return;
-	}
-	
-	let payload = {
-		observed_at: new Date().toISOString(),
-		latitude: CONFIG.latitude,
-		longitude: CONFIG.longitude,
-		l1_v: em.a_voltage,
-		l2_v: em.b_voltage,
-		l3_v: em.c_voltage,
-		grid_frequency_hz: validFrequency(em.a_freq) ? em.a_freq : null,
-		smartmeter_model: CONFIG.smartmeterModel,
-		integration_version: "shelly-" + VERSION
-	};
+  let em = Shelly.getComponentStatus("em:0");
+  if (!em) em = {};
+  let voltages = [em.a_voltage, em.b_voltage, em.c_voltage];
+  let currents = [em.a_current, em.b_current, em.c_current];
+  let frequencies = [em.a_freq, em.b_freq, em.c_freq];
+  let index;
+  for (index = 0; index < 3; index++) collectVoltage(index, voltages[index]);
 
-	let payload_body = JSON.stringify(payload);
+  // Invalid optional readings never stop the clock or discard valid phases.
+  SendCounter += 1;
+  if (SendCounter * CONFIG.PeakIntervalMs < CONFIG.SendIntervalMs) return;
+  SendCounter = 0;
+  let intervalStatistics = statistics;
+  statistics = newStatistics();
 
-	if (log_c == 1) {
-		print (payload_body);
-	}
+  if (!validVoltage(voltages[0]) && !validVoltage(voltages[1]) && !validVoltage(voltages[2])) {
+    console.log("Ortsnetz: no valid phase voltage; interval skipped");
+    return;
+  }
 
-	try {
-	Shelly.call(
-		"HTTP.POST",
-		{ url: CONFIG.apiUrl,
-		  content_type: "application/json",
-		  ssl_ca: "*",
-		  timeout: 10,
-		  body: payload_body,
-		},
-		function (result, err_code, err_message) {
-			if (err_code !== 0) {
-				print(err_message);
-				reportResult(result, err_code, err_message);
-			}
-			console.log("Pushed result", JSON.stringify(result));
-		}
-		);
-	} catch (e) {
-		if (log_c == 1) {
-			print ("TryError: "+e);
-		}
-	};
+  let payload = {
+    observed_at: new Date().toISOString(),
+    latitude: CONFIG.latitude,
+    longitude: CONFIG.longitude,
+    smartmeter_model: CONFIG.smartmeterModel,
+    integration_version: "shelly-" + CONFIG.version
+  };
+  for (index = 0; index < 3; index++) {
+    let phase = "l" + (index + 1);
+    payload[phase + "_v"] = validVoltage(voltages[index]) ? rounded(voltages[index]) : -1;
+    let stats = intervalStatistics[index];
+    if (stats.count > 0) {
+      payload[phase + "_v_min"] = stats.min;
+      payload[phase + "_v_max"] = stats.max;
+      // Keep min <= avg <= max even with floating-point rounding errors.
+      payload[phase + "_v_avg"] = Math.max(stats.min, Math.min(stats.max, rounded(stats.sum / stats.count)));
+    }
+    if (validVoltage(voltages[index]) && validCurrent(currents[index])) {
+      payload[phase + "_a"] = currents[index];
+    }
+    if (payload.grid_frequency_hz === undefined && validVoltage(voltages[index]) && validFrequency(frequencies[index])) {
+      payload.grid_frequency_hz = frequencies[index];
+    }
+  }
+  if (finiteNumber(em.total_act_power)) payload.grid_power_w = em.total_act_power;
+  if (finiteNumber(em.total_aprt_power) && em.total_aprt_power >= 0) payload.apparent_power_va = em.total_aprt_power;
+  if (finiteNumber(CONFIG.capacity) && CONFIG.capacity > 0 && CONFIG.capacity <= 1000) payload.plant_capacity_kwp = CONFIG.capacity;
+  if (finiteNumber(CONFIG.battery) && CONFIG.battery >= 0 && CONFIG.battery <= 150) payload.battery_capacity = CONFIG.battery;
+
+  let body = JSON.stringify(payload);
+  if (log_c === 1) console.log(body);
+  try {
+    Shelly.call("HTTP.POST", {
+      url: CONFIG.apiUrl,
+      content_type: "application/json",
+      ssl_ca: "*",
+      timeout: 10,
+      body: body
+    }, reportResult);
+  } catch (error) {
+    console.log("Ortsnetz request failed: " + error);
+  }
 }
 
-sendMeasurement();
-Timer.set(CONFIG.intervalMs, true, sendMeasurement);
-
+if (!finiteNumber(CONFIG.latitude) || CONFIG.latitude < -90 || CONFIG.latitude > 90 ||
+    !finiteNumber(CONFIG.longitude) || CONFIG.longitude < -180 || CONFIG.longitude > 180) {
+  console.log("Ortsnetz: configure latitude and longitude before starting");
+} else if (!finiteNumber(CONFIG.SendIntervalMs) || CONFIG.SendIntervalMs < 300000 ||
+           !finiteNumber(CONFIG.PeakIntervalMs) || CONFIG.PeakIntervalMs <= 0 || CONFIG.PeakIntervalMs > CONFIG.SendIntervalMs) {
+  console.log("Ortsnetz: configure a send interval of at least 300000 ms and a valid sampling interval");
+} else {
+  Timer.set(CONFIG.PeakIntervalMs, true, sendMeasurement);
+}
