@@ -14,6 +14,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 - [MQTT](#mqtt)
 - [evcc](#evcc)
 - [Victron GX](#victron-gx)
+- [Victron GX Node-RED](#victron-gx-node-red)
 - [Victron GX Extern](#victron-gx-extern)
 - [Carlo Gavazzi EM24 (Community)](#carlo-gavazzi-em24-community)
 - [Volkszähler](#volkszähler)
@@ -46,6 +47,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | [MQTT](#mqtt) | MQTT-Topics | Node.js / Docker | HTTPS | Smart-Meter-Gateways mit MQTT und EVCC |
 | [evcc](#evcc) | Shelly Gen2/3 oder Modbus TCP | Python / cron | HTTPS | evcc-Installationen mit direktem Zählerzugriff |
 | [Victron GX](#victron-gx) | VE.Bus oder Netzzähler über D-Bus | Python / Venus OS | HTTPS | Victron GX-Geräte |
+| [Victron GX Node-RED](#victron-gx-node-red) | VE.Bus oder Netzzähler über Victron-Nodes | Node-RED / Venus OS Large | HTTPS | Victron GX-Geräte mit Node-RED |
 | [Carlo Gavazzi EM24 (Community)](#carlo-gavazzi-em24-community) | EM24 über mbmd / MQTT | Python / Linux / systemd | HTTPS | EM24-Installationen mit mbmd und MQTT |
 | [Volkszähler](#volkszähler) | Volkszähler-Middleware | Python / cron | HTTPS | Smart Meter mit Volkszähler |
 | [KOSTAL KSEM](#kostal-ksem) | KOSTAL Smart Energy Meter | Node-RED / Modbus | HTTPS | KSEM mit Node-RED |
@@ -154,6 +156,16 @@ Das Python-Script läuft direkt auf Venus OS und liest Netzspannungen über den 
 - Voraussetzungen: Victron GX mit Venus OS, VE.Bus-Gerät oder Netzzähler, SSH-Zugang und Internetzugang
 
 Installation, Konfiguration und Autostart stehen in der [Victron-GX-README](victron-gx-ortsnetz-auslastung/README.md).
+
+## Victron GX Node-RED
+
+Der importierbare Node-RED-Flow läuft direkt auf Venus OS Large und liest Netzspannungen und Frequenz über die Victron-Nodes. Wie das Python-Script bevorzugt er den Victron-Netzzähler und verwendet andernfalls VE.Bus. SSH-Zugang und Autostart-Eintrag sind nicht nötig.
+
+- Ordner: [`victron-gx-ortsnetz-auslastung-node-red`](victron-gx-ortsnetz-auslastung-node-red)
+- Flow: [`Ortsnetz-Auslastung.json`](victron-gx-ortsnetz-auslastung-node-red/Ortsnetz-Auslastung.json)
+- Voraussetzungen: Victron GX mit Venus OS Large und aktiviertem Node-RED, VE.Bus-Gerät oder Netzzähler und Internetzugang
+
+Nach dem Import in den Victron-Nodes das eigene Gerät auswählen und die Koordinaten im Function-Node „Messung erstellen“ anpassen. Details stehen in der [Victron-GX-Node-RED-README](victron-gx-ortsnetz-auslastung-node-red/README.md).
 
 ## Victron GX Extern
 

@@ -1,0 +1,424 @@
+[
+    {
+        "id": "on_tab",
+        "type": "tab",
+        "label": "Ortsnetz-Auslastung",
+        "disabled": false,
+        "info": "Sendet alle 5 Minuten L1–L3-Spannung und Netzfrequenz an https://www.ortsnetz-auslastung.de/v1/measurements.\nQuelle: zuerst Netzzähler, sonst VE.Bus (Multi/Quattro).\nNach dem Import in jedem Victron-Node das eigene Gerät auswählen und LATITUDE/LONGITUDE in 'Messung erstellen' anpassen."
+    },
+    {
+        "id": "on_cmt_grid",
+        "type": "comment",
+        "z": "on_tab",
+        "name": "1. Netzzähler (falls vorhanden)",
+        "info": "",
+        "x": 190,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "on_in_grid_L1",
+        "type": "victron-input-gridmeter",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.grid/30",
+        "path": "/Ac/L1/Voltage",
+        "serviceObj": {
+            "service": "com.victronenergy.grid/30",
+            "name": "Grid meter"
+        },
+        "pathObj": {
+            "path": "/Ac/L1/Voltage",
+            "type": "float",
+            "name": "L1 Voltage (V)"
+        },
+        "name": "grid L1",
+        "onlyChanges": false,
+        "roundValues": "no",
+        "rateLimit": 0,
+        "x": 190,
+        "y": 100,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_in_grid_L2",
+        "type": "victron-input-gridmeter",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.grid/30",
+        "path": "/Ac/L2/Voltage",
+        "serviceObj": {
+            "service": "com.victronenergy.grid/30",
+            "name": "Grid meter"
+        },
+        "pathObj": {
+            "path": "/Ac/L2/Voltage",
+            "type": "float",
+            "name": "L2 Voltage (V)"
+        },
+        "name": "grid L2",
+        "onlyChanges": false,
+        "roundValues": "no",
+        "rateLimit": 0,
+        "x": 190,
+        "y": 160,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_in_grid_L3",
+        "type": "victron-input-gridmeter",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.grid/30",
+        "path": "/Ac/L3/Voltage",
+        "serviceObj": {
+            "service": "com.victronenergy.grid/30",
+            "name": "Grid meter"
+        },
+        "pathObj": {
+            "path": "/Ac/L3/Voltage",
+            "type": "float",
+            "name": "L3 Voltage (V)"
+        },
+        "name": "grid L3",
+        "onlyChanges": false,
+        "roundValues": "no",
+        "rateLimit": 0,
+        "x": 190,
+        "y": 220,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_in_grid_F",
+        "type": "victron-input-gridmeter",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.grid/30",
+        "path": "/Ac/Frequency",
+        "serviceObj": {
+            "service": "com.victronenergy.grid/30",
+            "name": "Grid meter"
+        },
+        "pathObj": {
+            "path": "/Ac/Frequency",
+            "type": "float",
+            "name": "Frequency (Hz)"
+        },
+        "name": "grid F",
+        "onlyChanges": false,
+        "roundValues": "no",
+        "rateLimit": 0,
+        "x": 190,
+        "y": 280,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_cmt_vebus",
+        "type": "comment",
+        "z": "on_tab",
+        "name": "2. VE.Bus (Multi/Quattro) – Fallback",
+        "info": "",
+        "x": 180,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "on_in_vebus_L1",
+        "type": "victron-input-vebus",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.vebus/276",
+        "path": "/Ac/ActiveIn/L1/V",
+        "serviceObj": {
+            "service": "com.victronenergy.vebus/276",
+            "name": "Multiplus",
+            "communityTag": "vebus"
+        },
+        "pathObj": {
+            "path": "/Ac/ActiveIn/L1/V",
+            "type": "float",
+            "name": "Input voltage phase 1 (VAC)"
+        },
+        "name": "vebus L1",
+        "onlyChanges": true,
+        "roundValues": "no",
+        "rateLimit": "0.2",
+        "conditionalMode": false,
+        "condition1HysteresisEnabled": false,
+        "condition1HysteresisThreshold": "",
+        "outputTrue": "",
+        "outputFalse": "",
+        "debounce": "",
+        "x": 180,
+        "y": 400,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_in_vebus_L2",
+        "type": "victron-input-vebus",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.vebus/276",
+        "path": "/Ac/ActiveIn/L2/V",
+        "serviceObj": {
+            "service": "com.victronenergy.vebus/276",
+            "name": "Multiplus",
+            "communityTag": "vebus"
+        },
+        "pathObj": {
+            "path": "/Ac/ActiveIn/L2/V",
+            "type": "float",
+            "name": "Input voltage phase 2 (VAC)"
+        },
+        "name": "vebus L2",
+        "onlyChanges": true,
+        "roundValues": "no",
+        "rateLimit": "0.2",
+        "conditionalMode": false,
+        "condition1HysteresisEnabled": false,
+        "condition1HysteresisThreshold": "",
+        "outputTrue": "",
+        "outputFalse": "",
+        "debounce": "",
+        "x": 180,
+        "y": 460,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_in_vebus_L3",
+        "type": "victron-input-vebus",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.vebus/276",
+        "path": "/Ac/ActiveIn/L3/V",
+        "serviceObj": {
+            "service": "com.victronenergy.vebus/276",
+            "name": "Multiplus",
+            "communityTag": "vebus"
+        },
+        "pathObj": {
+            "path": "/Ac/ActiveIn/L3/V",
+            "type": "float",
+            "name": "Input voltage phase 3 (VAC)"
+        },
+        "name": "vebus L3",
+        "onlyChanges": true,
+        "roundValues": "no",
+        "rateLimit": "0.2",
+        "conditionalMode": false,
+        "condition1HysteresisEnabled": false,
+        "condition1HysteresisThreshold": "",
+        "outputTrue": "",
+        "outputFalse": "",
+        "debounce": "",
+        "x": 180,
+        "y": 520,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_in_vebus_F",
+        "type": "victron-input-vebus",
+        "z": "on_tab",
+        "outputs": 1,
+        "service": "com.victronenergy.vebus/276",
+        "path": "/Ac/ActiveIn/L1/F",
+        "serviceObj": {
+            "service": "com.victronenergy.vebus/276",
+            "name": "Multiplus",
+            "communityTag": "vebus"
+        },
+        "pathObj": {
+            "path": "/Ac/ActiveIn/L1/F",
+            "type": "float",
+            "name": "Input frequency phase 1 (Hz)"
+        },
+        "name": "vebus F",
+        "onlyChanges": true,
+        "roundValues": "no",
+        "rateLimit": "0.2",
+        "conditionalMode": false,
+        "condition1HysteresisEnabled": false,
+        "condition1HysteresisThreshold": "",
+        "outputTrue": "",
+        "outputFalse": "",
+        "debounce": "",
+        "x": 190,
+        "y": 580,
+        "wires": [
+            [
+                "on_store"
+            ]
+        ]
+    },
+    {
+        "id": "on_store",
+        "type": "function",
+        "z": "on_tab",
+        "name": "Werte speichern",
+        "func": "// Speichert jeden Messwert mit Zeitstempel, damit \"Messung erstellen\" veraltete Werte erkennt.\n// msg.topic ist der Node-Name, z. B. \"grid L1\" oder \"vebus F\".\nconst values = flow.get(\"ortsnetz\") || {};\nvalues[msg.topic] = { v: typeof msg.payload === \"number\" ? msg.payload : null, t: Date.now() };\nflow.set(\"ortsnetz\", values);\nnode.status({fill: \"green\", shape: \"dot\", text: \"L1: \" + values[\"vebus L1\"].v + \", L2: \" + values[\"vebus L2\"].v + \", L3: \" + values[\"vebus L3\"].v});\nreturn null;\n",
+        "outputs": 0,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 640,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "on_inject",
+        "type": "inject",
+        "z": "on_tab",
+        "name": "alle 5 min (erstmals nach 30 s)",
+        "props": [],
+        "repeat": "300",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "30",
+        "topic": "",
+        "x": 230,
+        "y": 860,
+        "wires": [
+            [
+                "on_build"
+            ]
+        ]
+    },
+    {
+        "id": "on_build",
+        "type": "function",
+        "z": "on_tab",
+        "name": "Messung erstellen",
+        "func": "// ---------------- Konfiguration ----------------\nconst LATITUDE = 52.520008;\nconst LONGITUDE = 13.404954;\n// Optional: tatsächliche installierte PV-Leistung in kWp, sonst null (wird dann nicht übertragen)\nconst PLANT_KWP = null;\nconst PV_FORECAST_KWH = null;   // optional, z. B. 24.5\nconst SMARTMETER_MODEL = \"Victron GX NodeRed\";\nconst API_URL = \"https://www.ortsnetz-auslastung.de/v1/measurements\";\n// Werte, die länger nicht aktualisiert wurden, gelten als ungültig (Gerät getrennt)\nconst MAX_AGE_MS = 60 * 1000;\n// -----------------------------------------------\nconst VERSION = \"venus-nodered-0.1.0\";\n\nconst values = flow.get(\"ortsnetz\") || {};\n\nfunction get(key) {\n    const e = values[key];\n    if (!e || e.v === null || Date.now() - e.t > MAX_AGE_MS) return null;\n    return e.v;\n}\n\nconst round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;\nconst validV = (v) => (v !== null && v >= 150 && v <= 300 ? round(v, 1) : -1);\nconst validForecast = (v) => (typeof v === \"number\" && v >= 0 && v <= 100000 ? round(v, 2) : null);\n\n// Reihenfolge wie im Python-Script: 1. Netzzähler, 2. VE.Bus\nlet source = null;\nlet volts = [null, null, null];\nlet freq = null;\nfor (const prefix of [\"grid\", \"vebus\"]) {\n    const v = [1, 2, 3].map((i) => get(`${prefix} L${i}`));\n    if (validV(v[0]) !== -1) {\n        source = prefix;\n        volts = v;\n        freq = get(`${prefix} F`);\n        break;\n    }\n}\n\nconst [l1, l2, l3] = volts.map(validV);\nif (l1 === -1) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"keine gültige L1-Spannung\" });\n    node.warn(\"Keine gültige L1-Spannung (Quelle: keine gefunden) – übersprungen\");\n    return null;\n}\n\nconst payload = {\n    observed_at: new Date().toISOString().replace(/\\.\\d{3}Z$/, \"Z\"),\n    latitude: LATITUDE,\n    longitude: LONGITUDE,\n    l1_v: l1,\n    l2_v: l2,\n    l3_v: l3,\n    smartmeter_model: SMARTMETER_MODEL,\n    integration_version: VERSION,\n};\nif (freq !== null && freq >= 45 && freq <= 55) payload.grid_frequency_hz = round(freq, 2);\nif (PLANT_KWP) payload.plant_capacity_kwp = PLANT_KWP;\nconst forecast = validForecast(PV_FORECAST_KWH);\nif (forecast !== null) payload.pv_forecast_kwh = forecast;\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: `${source}: L1=${l1} L2=${l2} L3=${l3} V` });\nreturn {\n    url: API_URL,\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\" },\n    payload: payload,\n    source: source,\n    requestTimeout: 15000,\n};\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 540,
+        "y": 860,
+        "wires": [
+            [
+                "on_keep"
+            ]
+        ]
+    },
+    {
+        "id": "on_keep",
+        "type": "function",
+        "z": "on_tab",
+        "name": "Messung merken",
+        "func": "// Messung für die Auswertung merken, http request ersetzt msg.payload durch die Antwort\nmsg.req_payload = msg.payload;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 810,
+        "y": 860,
+        "wires": [
+            [
+                "on_http"
+            ]
+        ]
+    },
+    {
+        "id": "on_http",
+        "type": "http request",
+        "z": "on_tab",
+        "name": "POST measurements",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 1080,
+        "y": 860,
+        "wires": [
+            [
+                "on_result"
+            ]
+        ]
+    },
+    {
+        "id": "on_result",
+        "type": "function",
+        "z": "on_tab",
+        "name": "Ergebnis",
+        "func": "const p = msg.req_payload || {};\nif (msg.statusCode >= 200 && msg.statusCode < 300) {\n    const body = typeof msg.payload === \"object\" && msg.payload !== null ? msg.payload : {};\n    const overall = (body.status && body.status.overall) || \"?\";\n    const text = `OK (${msg.source}): L1=${p.l1_v} L2=${p.l2_v} L3=${p.l3_v} V, f=${p.grid_frequency_hz ?? \"-\"} Hz -> ${overall}`;\n    node.status({ fill: overall == \"green\" ? \"green\" : \"blue\", shape: \"dot\", text: text });\n    node.log(text);\n} else if (typeof msg.statusCode === \"number\") {\n    const body = typeof msg.payload === \"string\" ? msg.payload : JSON.stringify(msg.payload);\n    node.status({ fill: \"red\", shape: \"dot\", text: `HTTP ${msg.statusCode}` });\n    node.warn(`HTTP ${msg.statusCode}: ${body}`);\n} else {\n    node.status({ fill: \"red\", shape: \"dot\", text: \"Übertragung fehlgeschlagen\" });\n    node.warn(`Übertragung fehlgeschlagen: ${msg.payload}`);\n}\nreturn null;\n",
+        "outputs": 0,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 860,
+        "wires": []
+    },
+    {
+        "id": "1ec578c38394d7ba",
+        "type": "comment",
+        "z": "on_tab",
+        "name": "https://www.ortsnetz-auslastung.de/",
+        "info": "",
+        "x": 1280,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "182f56f5fa45bf7d",
+        "type": "comment",
+        "z": "on_tab",
+        "name": "Einrichten:",
+        "info": "Alle blauen (Victron) Kästchen aufmachen und prüfen ob die richtigen Werte bzw. die richtige Anlage ausgewählt ist\n\nDas Script \"Messung erstellen\" öffnen und die richtige GPS-Position eintragen. \n\nsiehe https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung#koordinaten\n\n",
+        "x": 620,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "1d698ee23e668b74",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "@victronenergy/node-red-contrib-victron": "1.7.27"
+        }
+    }
+]
