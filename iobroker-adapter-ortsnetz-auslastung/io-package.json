@@ -1,0 +1,74 @@
+{
+  "common": {
+    "name": "ortsnetz-auslastung",
+    "version": "0.1.0",
+    "news": {
+      "0.1.0": {
+        "de": "Erstversion: Upload an ortsnetz-auslastung.de mit Prioritätslisten je Phase, Ampel/Speicherempfehlung/Redispatch als Datenpunkte, Karte im Admin-Menü.",
+        "en": "Initial release: upload to ortsnetz-auslastung.de with priority lists per phase, traffic light/storage recommendation/redispatch as states, map in the admin menu."
+      }
+    },
+    "title": "Ortsnetz-Auslastung",
+    "titleLang": { "de": "Ortsnetz-Auslastung", "en": "Local grid load (Ortsnetz-Auslastung)" },
+    "desc": {
+      "de": "Sendet die Netzspannung (und optional Frequenz, PV-Prognose, Speicher-SOC, Netzleistung) alle 5 Minuten an ortsnetz-auslastung.de, legt Ampel, Speicherladeempfehlung und Redispatch als Datenpunkte an und zeigt die bundesweite Karte samt eigenen Messpunkten.",
+      "en": "Sends the grid voltage (and optionally frequency, PV forecast, battery SOC, grid power) every 5 minutes to ortsnetz-auslastung.de, stores traffic light, storage recommendation and redispatch as states and shows the nationwide map including the own measuring points."
+    },
+    "authors": ["fusenigk"],
+    "keywords": ["ortsnetz", "spannung", "voltage", "grid", "redispatch"],
+    "license": "MIT",
+    "licenseInformation": { "license": "MIT", "type": "free" },
+    "platform": "Javascript/Node.js",
+    "main": "main.js",
+    "icon": "ortsnetz-auslastung.svg",
+    "enabled": true,
+    "extIcon": "https://raw.githubusercontent.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung/master/iobroker-adapter-ortsnetz-auslastung/admin/ortsnetz-auslastung.svg",
+    "readme": "https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung/blob/master/iobroker-adapter-ortsnetz-auslastung/README.md",
+    "loglevel": "info",
+    "tier": 3,
+    "mode": "daemon",
+    "type": "energy",
+    "compact": true,
+    "connectionType": "cloud",
+    "dataSource": "push",
+    "adminUI": { "config": "json", "tab": "html" },
+    "messagebox": true,
+    "subscribe": "messagebox",
+    "adminTab": {
+      "singleton": true,
+      "name": { "de": "Ortsnetz-Auslastung", "en": "Local grid load" },
+      "fa-icon": "bolt",
+      "order": 210
+    },
+    "dependencies": [{ "js-controller": ">=5.0.0" }],
+    "globalDependencies": [{ "admin": ">=7.0.0" }]
+  },
+  "native": {
+    "instanceName": "",
+    "latitude": "",
+    "longitude": "",
+    "smartmeterModel": "",
+    "plantCapacityKwp": "",
+    "batteryCapacity": "",
+    "maxAgeMin": 15,
+    "maxAgeFreqMin": 15,
+    "sources": [],
+    "sendStatistics": true,
+    "coordDecimals": 3,
+    "dryRun": false,
+    "mapEnabled": true,
+    "mapRefreshMin": 15,
+    "neighbourRadiusKm": 25,
+    "showAdminTab": true
+  },
+  "objects": [],
+  "instanceObjects": [
+    { "_id": "info", "type": "channel", "common": { "name": { "de": "Information", "en": "Information" } }, "native": {} },
+    {
+      "_id": "info.connection",
+      "type": "state",
+      "common": { "role": "indicator.connected", "name": { "de": "Letzter Upload angenommen", "en": "Last upload accepted" }, "type": "boolean", "read": true, "write": false, "def": false },
+      "native": {}
+    }
+  ]
+}
