@@ -1,0 +1,221 @@
+{
+  "i18n": true,
+  "type": "tabs",
+  "items": {
+    "siteTab": {
+      "type": "panel",
+      "label": "Standort",
+      "items": {
+        "intro": {
+          "type": "staticText",
+          "text": "Eine Instanz = ein Messort. Für einen weiteren Standort (z. B. eine Ferienwohnung) eine zweite Instanz anlegen. Übertragen werden nur Koordinaten, Messwerte und Gerätemodell – keine Gerätekennungen, Zählernummern oder IP-Adressen.",
+          "newLine": true,
+          "xs": 12
+        },
+        "instanceName": {
+          "type": "text",
+          "label": "Name dieser Instanz",
+          "help": "z. B. Haus Musterstadt – erscheint in der Instanzliste, in der Karte und im Protokoll",
+          "maxLength": 60,
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 6, "lg": 4
+        },
+        "hdrPos": { "type": "header", "text": "Position", "size": 5, "newLine": true },
+        "latitude": {
+          "type": "number",
+          "label": "Breitengrad",
+          "help": "z. B. 52.516 – drei Nachkommastellen (~100 m) genügen",
+          "min": -90, "max": 90, "step": 0.001,
+          "newLine": true,
+          "xs": 6, "sm": 6, "md": 3, "lg": 2
+        },
+        "longitude": {
+          "type": "number",
+          "label": "Längengrad",
+          "help": "z. B. 13.378",
+          "min": -180, "max": 180, "step": 0.001,
+          "xs": 6, "sm": 6, "md": 3, "lg": 2
+        },
+        "systemPosition": {
+          "type": "sendTo",
+          "command": "systemPosition",
+          "label": "Position aus den Systemeinstellungen",
+          "variant": "outlined",
+          "useNative": true,
+          "showProcess": true,
+          "xs": 12, "sm": 6, "md": 4, "lg": 3
+        },
+        "coordDecimals": {
+          "type": "select",
+          "label": "Koordinaten beim Senden runden auf",
+          "options": [
+            { "label": "2 Nachkommastellen (~1 km)", "value": 2 },
+            { "label": "3 Nachkommastellen (~100 m)", "value": 3 },
+            { "label": "4 Nachkommastellen (~10 m)", "value": 4 }
+          ],
+          "newLine": true,
+          "xs": 12, "sm": 6, "md": 4, "lg": 3
+        },
+        "posHelp": {
+          "type": "staticLink",
+          "label": "Koordinaten in OpenStreetMap ermitteln (Rechtsklick → „Adresse anzeigen“)",
+          "href": "https://www.openstreetmap.org/",
+          "button": false,
+          "newLine": true,
+          "xs": 12
+        },
+        "hdrStatic": { "type": "header", "text": "Angaben zur Anlage (optional)", "size": 5, "newLine": true },
+        "smartmeterModel": {
+          "type": "text",
+          "label": "Messgerät (Hersteller und Modell)",
+          "help": "z. B. Shelly Pro 3EM – nicht die übertragende Software",
+          "maxLength": 120,
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 6, "lg": 4
+        },
+        "plantCapacityKwp": {
+          "type": "number",
+          "label": "PV-Leistung (kWp)",
+          "help": "leer = keine Angabe; nötig für die PV-Prognose",
+          "min": 0, "max": 1000, "step": 0.1,
+          "xs": 6, "sm": 6, "md": 3, "lg": 2
+        },
+        "batteryCapacity": {
+          "type": "number",
+          "label": "Speicherkapazität (kWh)",
+          "help": "nutzbare Kapazität, leer = keine Angabe",
+          "min": 0, "step": 0.1,
+          "xs": 6, "sm": 6, "md": 3, "lg": 2
+        }
+      }
+    },
+    "sourcesTab": {
+      "type": "panel",
+      "label": "Geräte und Datenpunkte",
+      "items": {
+        "srcIntro": {
+          "type": "staticText",
+          "text": "Je Messgröße können mehrere Datenpunkte eingetragen werden. Bei jedem Upload gewinnt der erste in der Reihenfolge der Tabelle, dessen Wert frisch und plausibel ist (Spannung 150–300 V, Frequenz 45–55 Hz). Phasen ohne Datenpunkt werden als „nicht gemessen“ (-1) gesendet – bei einphasiger Messung also nur L1 eintragen.",
+          "newLine": true,
+          "xs": 12
+        },
+        "sources": {
+          "type": "table",
+          "newLine": true,
+          "xs": 12,
+          "label": "Datenpunkte",
+          "showSecondAddAt": 6,
+          "noDelete": false,
+          "items": [
+            { "type": "checkbox", "attr": "enabled", "title": "Aktiv", "width": "6%", "default": true },
+            {
+              "type": "select",
+              "attr": "kind",
+              "title": "Messgröße",
+              "width": "20%",
+              "default": "l1",
+              "options": [
+                { "label": "Spannung L1 (V)", "value": "l1" },
+                { "label": "Spannung L2 (V)", "value": "l2" },
+                { "label": "Spannung L3 (V)", "value": "l3" },
+                { "label": "Netzfrequenz (Hz)", "value": "frequency" },
+                { "label": "PV-Prognose heute (kWh)", "value": "pvForecast" },
+                { "label": "Speicher-Ladezustand (%)", "value": "batterySoc" },
+                { "label": "Netzleistung (W, + Bezug / − Einspeisung)", "value": "gridPower" }
+              ]
+            },
+            { "type": "objectId", "attr": "id", "title": "Datenpunkt", "width": "74%", "filter": true }
+          ]
+        },
+        "hdrAge": { "type": "header", "text": "Frische", "size": 5, "newLine": true },
+        "maxAgeMin": {
+          "type": "number",
+          "label": "Spannung höchstens … Minuten alt",
+          "help": "ältere Werte werden übersprungen (ereignisgesteuerte Geräte melden nur bei Änderung)",
+          "min": 1, "max": 1440,
+          "newLine": true,
+          "xs": 12, "sm": 6, "md": 4, "lg": 3
+        },
+        "maxAgeFreqMin": {
+          "type": "number",
+          "label": "Frequenz, SOC, Netzleistung höchstens … Minuten alt",
+          "min": 1, "max": 1440,
+          "xs": 12, "sm": 6, "md": 4, "lg": 3
+        },
+        "hdrTools": { "type": "header", "text": "Hilfen", "size": 5, "newLine": true },
+        "findSources": {
+          "type": "sendTo",
+          "command": "findSources",
+          "label": "Spannungs- und Frequenz-Datenpunkte suchen",
+          "variant": "outlined",
+          "showProcess": true,
+          "newLine": true,
+          "xs": 12, "sm": 6, "md": 4
+        },
+        "testPayload": {
+          "type": "sendTo",
+          "command": "testPayload",
+          "jsonData": "{\"latitude\":\"${data.latitude}\",\"longitude\":\"${data.longitude}\",\"instanceName\":\"${data.instanceName}\",\"smartmeterModel\":\"${data.smartmeterModel}\",\"plantCapacityKwp\":\"${data.plantCapacityKwp}\",\"batteryCapacity\":\"${data.batteryCapacity}\",\"maxAgeMin\":\"${data.maxAgeMin}\",\"maxAgeFreqMin\":\"${data.maxAgeFreqMin}\",\"sources\":${JSON.stringify(data.sources || [])}}",
+          "label": "Payload testen (ohne Senden)",
+          "variant": "outlined",
+          "showProcess": true,
+          "xs": 12, "sm": 6, "md": 4
+        },
+        "toolsHelp": {
+          "type": "staticText",
+          "text": "Die Hilfen benötigen eine laufende Instanz. „Payload testen“ verwendet die aktuell eingetragenen (auch ungespeicherten) Werte.",
+          "newLine": true,
+          "xs": 12
+        }
+      }
+    },
+    "behaviourTab": {
+      "type": "panel",
+      "label": "Übertragung und Karte",
+      "items": {
+        "sendStatistics": {
+          "type": "checkbox",
+          "label": "Minimum, Maximum und Mittelwert über das 5-Minuten-Intervall mitsenden",
+          "newLine": true,
+          "xs": 12
+        },
+        "dryRun": {
+          "type": "checkbox",
+          "label": "Testbetrieb: Payload nur protokollieren, nichts senden",
+          "newLine": true,
+          "xs": 12
+        },
+        "hdrMap": { "type": "header", "text": "Karte und Umgebung", "size": 5, "newLine": true },
+        "showAdminTab": {
+          "type": "checkbox",
+          "label": "Menüpunkt „Ortsnetz-Auslastung“ im Admin-Seitenmenü anzeigen",
+          "help": "nach dem Speichern den Admin im Browser neu laden",
+          "newLine": true,
+          "xs": 12
+        },
+        "mapEnabled": {
+          "type": "checkbox",
+          "label": "Öffentliche Karte regelmäßig laden und Umgebungswerte berechnen",
+          "newLine": true,
+          "xs": 12
+        },
+        "mapRefreshMin": {
+          "type": "number",
+          "label": "Karte laden alle … Minuten",
+          "help": "ca. 0,7 MB je Abruf; der Reiter lädt beim Öffnen zusätzlich",
+          "min": 5, "max": 1440,
+          "hidden": "!data.mapEnabled",
+          "newLine": true,
+          "xs": 12, "sm": 6, "md": 4, "lg": 3
+        },
+        "neighbourRadiusKm": {
+          "type": "number",
+          "label": "Umkreis für Umgebungswerte (km)",
+          "min": 1, "max": 200,
+          "hidden": "!data.mapEnabled",
+          "xs": 12, "sm": 6, "md": 4, "lg": 3
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+node_modules/
+*.tgz
+deploy.env
+.DS_Store

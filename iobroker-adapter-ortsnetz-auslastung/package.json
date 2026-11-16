@@ -1,0 +1,17 @@
+{
+  "name": "iobroker.ortsnetz-auslastung",
+  "version": "0.1.0",
+  "description": "ioBroker-Adapter: sendet die Netzspannung an ortsnetz-auslastung.de, speichert Ampel, Speicherladeempfehlung und Redispatch und zeigt die bundesweite Karte im Admin",
+  "author": "fusenigk",
+  "license": "MIT",
+  "keywords": ["ioBroker", "ortsnetz", "netzspannung", "spannung", "grid voltage", "redispatch", "smart meter"],
+  "main": "main.js",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@iobroker/adapter-core": "^3.2.3"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "files": ["main.js", "lib/", "admin/", "io-package.json", "LICENSE", "README.md"]
+}
