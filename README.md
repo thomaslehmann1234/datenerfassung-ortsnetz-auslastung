@@ -5,6 +5,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 ## Schnellnavigation
 
 - [Shelly Pro 3EM und Pro EM50](#shelly-pro-3em-und-pro-em50)
+- [Shelly Pro 3EM (Docker)](#shelly-pro-3em-docker)
 - [SMA Sunny Home Manager 2.0 und Energy Meter](#sma-sunny-home-manager-20-und-energy-meter)
 - [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf)
 - [Home Assistant](#home-assistant)
@@ -38,6 +39,7 @@ Dieses Repository bündelt Integrationen, die lokale Netzspannungsmessungen an d
 | Integration | Datenquelle | Laufzeit | Übertragung | Geeignet für |
 | --- | --- | --- | --- | --- |
 | [Shelly Pro 3EM und Pro EM50](#shelly-pro-3em-und-pro-em50) | Direkte Spannungsmessung | Shelly Script | HTTPS | Shelly-Installationen |
+| [Shelly Pro 3EM (Docker)](#shelly-pro-3em-docker) | Lokale RPC-Abfrage (`EM.GetStatus`) | Python / Docker | HTTPS | Shelly Pro 3EM, wenn das Script nicht auf dem Shelly laufen soll |
 | [SMA Sunny Home Manager 2.0 und Energy Meter](#sma-sunny-home-manager-20-und-energy-meter) | Speedwire-Multicast (EMETER-Protokoll) | Python / systemd / Docker / TrueNAS SCALE | HTTPS | SMA-Anlagen mit Sunny Home Manager 2.0 oder Energy Meter |
 | [Tasmota SML-Lesekopf](#tasmota-sml-lesekopf) | Optische Smart-Meter-Schnittstelle | ESP32 / Tasmota Script | HTTPS / WebQuery | SML-fähige Stromzähler |
 | [Home Assistant](#home-assistant) | Vorhandene Spannungssensoren | Home Assistant / HACS | HTTPS | Home-Assistant-Installationen |
@@ -72,6 +74,16 @@ Skripte für Shelly Pro 3EM, Pro 3EM-400 und Pro EM50. Sie senden sofort nach de
 - Anleitung: [Shelly-README](shelly-ortsnetz-auslastung/README.md)
 
 Vor dem Aktivieren Breitengrad und Längengrad konfigurieren.
+
+## Shelly Pro 3EM (Docker)
+
+Der Docker-Container fragt einen Shelly Pro 3EM oder Pro 3EM-400 lokal über die RPC-Schnittstelle ab und sendet sofort nach dem Start und danach alle fünf Minuten. Zusätzlich überträgt er Minimum, Maximum und Mittelwert der Spannungen aus Abfragen im 15-Sekunden-Takt. Ist der Shelly oder die API nicht erreichbar, wird die Messung verworfen.
+
+- Ordner: [`shelly-docker-ortsnetz-auslastung`](shelly-docker-ortsnetz-auslastung)
+- Script: [`ortsnetz-shelly.py`](shelly-docker-ortsnetz-auslastung/ortsnetz-shelly.py)
+- Voraussetzungen: Docker (oder Python ab 3.8), Shelly Pro 3EM ohne aktivierte Authentifizierung im selben Netz und Internetzugang
+
+Installation und Umgebungsvariablen stehen in der [Shelly-Docker-README](shelly-docker-ortsnetz-auslastung/README.md).
 
 ## SMA Sunny Home Manager 2.0 und Energy Meter
 
