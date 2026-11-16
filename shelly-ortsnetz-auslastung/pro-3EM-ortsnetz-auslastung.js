@@ -20,6 +20,16 @@ let CONFIG = {
 };
 
 let SendCounter = 0;
+
+function newStatistics() {
+  return [
+    { min: null, max: null, sum: 0, count: 0 },
+    { min: null, max: null, sum: 0, count: 0 },
+    { min: null, max: null, sum: 0, count: 0 }
+  ];
+}
+
+
 let statistics = newStatistics();
 
 function finiteNumber(value) {
@@ -40,14 +50,6 @@ function validFrequency(value) {
 
 function rounded(value) {
   return Math.round(value * 100) / 100;
-}
-
-function newStatistics() {
-  return [
-    { min: null, max: null, sum: 0, count: 0 },
-    { min: null, max: null, sum: 0, count: 0 },
-    { min: null, max: null, sum: 0, count: 0 }
-  ];
 }
 
 function collectVoltage(index, value) {
