@@ -1,0 +1,15 @@
+services:
+  ortsnetz-shelly:
+    build: .
+    container_name: ortsnetz-shelly
+    environment:
+      ORTSNETZ_SHELLY_IP: "${ORTSNETZ_SHELLY_IP:?IP des Shelly in .env setzen}"
+      ORTSNETZ_LATITUDE: "${ORTSNETZ_LATITUDE:?Breitengrad des Messorts in .env setzen}"
+      ORTSNETZ_LONGITUDE: "${ORTSNETZ_LONGITUDE:?Längengrad des Messorts in .env setzen}"
+      ORTSNETZ_SHELLY_MODEL: "${ORTSNETZ_SHELLY_MODEL:-Shelly Pro 3EM}"
+      ORTSNETZ_CURRENT_TRANSFORMER_A: "${ORTSNETZ_CURRENT_TRANSFORMER_A:-120}"
+      ORTSNETZ_CAPACITY_KWP: "${ORTSNETZ_CAPACITY_KWP:-}"
+      ORTSNETZ_BATTERY_KWH: "${ORTSNETZ_BATTERY_KWH:-}"
+      ORTSNETZ_INTERVAL_S: "${ORTSNETZ_INTERVAL_S:-300}"
+      ORTSNETZ_SAMPLE_INTERVAL_S: "${ORTSNETZ_SAMPLE_INTERVAL_S:-15}"
+    restart: unless-stopped
