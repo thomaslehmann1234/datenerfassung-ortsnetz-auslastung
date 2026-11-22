@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ortsnetz-Auslastung</title>
+    <link rel="icon" href="./ortsnetz-auslastung.svg" />
+    <link rel="stylesheet" href="./lib/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="./tab.css" />
+    <!-- The socket client comes from the admin itself, so it always matches its server side. -->
+    <script src="../../lib/js/socket.io.js"></script>
+    <script src="./lib/leaflet/leaflet.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <img src="./ortsnetz-auslastung.svg" alt="" />
+        <div>
+          <b>Ortsnetz-Auslastung</b>
+          <small id="sub">verbinde …</small>
+        </div>
+      </div>
+      <nav class="seg" id="nav">
+        <button data-view="map" class="on">🗺️ Karte</button>
+        <button data-view="own">🏠 Eigene Messpunkte</button>
+      </nav>
+      <span class="sp"></span>
+      <button class="btn" id="reload" title="Daten neu laden">🔄</button>
+    </header>
+
+    <div id="banner"></div>
+
+    <section class="view active" id="view-map">
+      <div id="map"></div>
+      <div class="legend" id="legend">
+        <div class="lg-head"><b>Spannung (schlechteste Phase)</b><span id="pointCount"></span></div>
+        <label><input type="checkbox" data-f="high-critical" checked /><i style="--c: var(--c4)"></i>Überspannung kritisch <em id="n-high-critical"></em></label>
+        <label><input type="checkbox" data-f="high-warning" checked /><i style="--c: var(--c3)"></i>Überspannung Warnung <em id="n-high-warning"></em></label>
+        <label><input type="checkbox" data-f="normal" checked /><i style="--c: var(--c2)"></i>normal <em id="n-normal"></em></label>
+        <label><input type="checkbox" data-f="low-warning" checked /><i style="--c: var(--c1)"></i>Unterspannung Warnung <em id="n-low-warning"></em></label>
+        <label><input type="checkbox" data-f="low-critical" checked /><i style="--c: var(--c0)"></i>Unterspannung kritisch <em id="n-low-critical"></em></label>
+        <label><input type="checkbox" data-f="stale" /><i class="stale"></i>veraltet (&gt; 20 min) <em id="n-stale"></em></label>
+        <div class="lg-own"><i class="own"></i>eigener Messpunkt</div>
+        <div class="lg-stats" id="stats24"></div>
+        <div class="lg-foot">Quelle: <a href="https://www.ortsnetz-auslastung.de/" target="_blank" rel="noopener">ortsnetz-auslastung.de</a> · <span id="loadedAt"></span></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-own">
+      <div id="sites" class="sites"></div>
+    </section>
+
+    <script src="./tab.js"></script>
+  </body>
+</html>
