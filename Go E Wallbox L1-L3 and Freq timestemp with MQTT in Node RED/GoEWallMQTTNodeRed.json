@@ -62,16 +62,11 @@
                 "t": "eq",
                 "v": "go-eCharger/208926/nrg",
                 "vt": "str"
-            },
-            {
-                "t": "eq",
-                "v": "go-eCharger/208926/utc",
-                "vt": "str"
             }
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 3,
+        "outputs": 2,
         "x": 510,
         "y": 240,
         "wires": [
@@ -80,9 +75,6 @@
             ],
             [
                 "change_split_phases"
-            ],
-            [
-                "8acc6696b352d8ee"
             ]
         ]
     },
@@ -210,8 +202,8 @@
         "once": true,
         "onceDelay": "10",
         "topic": "",
-        "x": 170,
-        "y": 320,
+        "x": 150,
+        "y": 380,
         "wires": [
             [
                 "join_data"
@@ -428,22 +420,6 @@
                 "74597dbed434de90"
             ]
         ]
-    },
-    {
-        "id": "8acc6696b352d8ee",
-        "type": "debug",
-        "z": "2141aee32c50a56e",
-        "name": "debug 34",
-        "active": false,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "false",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 680,
-        "y": 340,
-        "wires": []
     },
     {
         "id": "609460c10d893372",
